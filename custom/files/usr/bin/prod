@@ -1,0 +1,60 @@
+#!/bin/sh
+
+# Copyright (c) 2023 LENAR
+
+ARG_MODE="$1"
+
+show_usage() {
+    cat <<EOF
+Usage: $(basename "$0") <Mode>
+
+Mode:
+  D            | Disable production mode
+  E            | Enable production mode
+  S            | Show production status
+EOF
+}
+
+error_exit() {
+    echo "Error: $1" >&2
+    exit 1
+}
+
+get_production_status() {
+    if ! OUTPUT=$(atcmd "AT*PROD?" 2>/dev/null); then
+        error_exit "Failed to retrieve production status."
+    else
+        PROD_MODE=$(echo "$OUTPUT" | awk -F':' '/^\*PROD/ {print $2}' | xargs)
+        case "$PROD_MODE" in
+            0) PROD_MODE="Disabled" ;;
+            2) PROD_MODE="Enabled" ;;
+            *) PROD_MODE="Unknown" ;;
+        esac
+        echo "Production mode: $PROD_MODE"
+    fi
+}
+
+set_production_mode() {
+    case "$ARG_MODE" in
+        D|d) ARG_MODE="0" ;;
+        E|e) ARG_MODE="2" ;;
+    esac
+    if ! atcmd "AT*PROD=$ARG_MODE" >/dev/null 2>&1; then
+        error_exit "Failed to set production mode."
+    else
+        echo "Production mode changed. System will reboot..."
+        if ! atexe "reboot" >/dev/null 2>&1; then
+            error_exit "Reboot command failed. Restart device manually."
+        fi
+    fi
+}
+
+case "$ARG_MODE" in
+    D|d|E|e) set_production_mode ;;
+    S|s) get_production_status ;;
+    H|h) show_usage ;;
+    '') error_exit "No command specified." ;;
+    *) error_exit "Invalid <Mode>. Use '$(basename "$0") H' for more details." ;;
+esac
+
+exit 0

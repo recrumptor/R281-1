@@ -1,0 +1,149 @@
+#!/bin/sh
+
+# Copyright (c) 2023 LENAR
+
+ARG_MODE="$1"
+ARG_ACT="$2"
+ARG_FREQ="$3"
+ARG_CELLID="$4"
+
+show_usage() {
+    cat <<EOF
+Usage: $(basename "$0") <Mode> <Act> [Freq] [Cellid]
+
+Mode:
+  D            | Disable frequency/cell lock
+  F            | Enable frequency lock
+  C            | Enable cell lock
+  S            | Check lock status
+
+Act:
+  G            | GSM
+  T            | UMTS_TD
+  W            | UMTS_WB
+  L            | LTE
+
+Freq:
+  Radio frequency channel (required for <Mode> F/C)
+
+Cellid:
+  Physical cell ID (required for <Mode> C)
+
+Examples:
+  $(basename "$0") F L 150    | Enable frequency lock for LTE on 150 MHz
+  $(basename "$0") C L 150 1  | Enable cell lock for LTE on 150 MHz with cell ID 1
+EOF
+}
+
+error_exit() {
+    echo "Error: $1" >&2
+    exit 1
+}
+
+check_celllock() {
+    if ! AT_CELL=$(atcmd "AT*CELL?" 2>/dev/null); then
+        error_exit "Failed to retrieve cell status."
+    else
+        CHECK=$(echo "$AT_CELL" | awk -F'[,:]' '/^\*CELL:/ {gsub(/[^0-9]/, "", $2); print $2}')
+        if [ -z "$CHECK" ]; then
+            error_exit "Could not parse cell status."
+        fi
+    fi
+}
+
+enable_celllock() {
+    check_celllock
+    case "$ARG_ACT" in
+        G|g) ARG_ACT="0" ;;
+        T|t) ARG_ACT="1" ;;
+        W|w) ARG_ACT="2" ;;
+        L|l) ARG_ACT="3" ;;
+        '') error_exit "Missing required argument <Act>." ;;
+        *) error_exit "Invalid <Act>. Use '$(basename "$0") H' for more details." ;;
+    esac
+    if [ -z "$ARG_FREQ" ]; then
+        error_exit "Missing required argument [Freq]."
+    fi
+    case "$ARG_FREQ" in
+        ''|*[!0-9]*) error_exit "[Freq] must be numeric." ;;
+    esac
+    if [ "$ARG_MODE" = "2" ]; then
+        if [ -z "$ARG_CELLID" ]; then
+            error_exit "Cell Lock requires a [Cellid]."
+        fi
+        case "$ARG_CELLID" in
+            ''|*[!0-9]*) error_exit "[Cellid] must be numeric." ;;
+        esac
+        CELLID="$ARG_CELLID"
+    else
+        CELLID="0"
+    fi
+    case "$ARG_MODE" in
+        1) TITLE="Frequency" ;;
+        2) TITLE="Cell" ;;
+    esac
+    case "$ARG_ACT" in
+        0) DATA="GSM" ;;
+        1) DATA="UMTS_TD" ;;
+        2) DATA="UMTS_WD" ;;
+        3) DATA="LTE" ;;
+    esac
+    if ! atcmd "AT*CELL=$ARG_MODE,$ARG_ACT,0,$ARG_FREQ,$CELLID" >/dev/null 2>&1; then
+        error_exit "Failed to enable lock."
+    else
+        printf "%s Lock Enabled\n\n" "${TITLE}"
+        echo "Details: ${DATA}, Frequency ${ARG_FREQ}, Cell ID ${CELLID}"
+        restart_wwan
+    fi
+}
+
+disable_celllock() {
+    check_celllock
+    case "$CHECK" in
+        0) RESULT="No active lock" ;;
+        1) RESULT="Frequency lock disabled" ;;
+        2) RESULT="Cell lock disabled" ;;
+        *) RESULT="Unknown status" ;;
+    esac
+    echo "Status: ${RESULT}"
+    case "$CHECK" in
+        1|2)
+            if ! atcmd "AT*CELL=0" >/dev/null 2>&1; then
+                error_exit "Failed to disable lock."
+            else
+                restart_wwan
+            fi
+            ;;
+    esac
+}
+
+show_status() {
+    check_celllock
+    case "$CHECK" in
+        0) STATUS="No active lock" ;;
+        1) STATUS="Frequency lock active" ;;
+        2) STATUS="Cell lock active" ;;
+        *) STATUS="Unknown status" ;;
+    esac
+    echo "Status: ${STATUS}"
+}
+
+restart_wwan() {
+    if ! ifup wwan >/dev/null 2>&1; then
+        error_exit "Failed to restart interface."
+    else
+        echo "Restarting interface..."
+    fi
+}
+
+case "$ARG_MODE" in
+    H|h) show_usage ;;
+    D|d) disable_celllock ;;
+    F|f) ARG_MODE="1"; enable_celllock ;;
+    C|c) ARG_MODE="2"; enable_celllock ;;
+    S|s) show_status ;;
+    '') error_exit "No command specified." ;;
+    *) error_exit "Invalid <Mode>. Use '$(basename "$0") H' for more details." ;;
+esac
+
+exit 0

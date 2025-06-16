@@ -1,0 +1,126 @@
+#!/bin/sh
+
+# Copyright (c) 2023 LENAR
+
+ARG_METHOD="$1"
+ARG_IMEI="$2"
+
+show_usage() {
+    cat <<EOF
+Usage: $(basename "$0") <Method> [IMEI]
+
+Method:
+  D            | Delete current IMEI
+  W            | Write new IMEI (requires 15-digit IMEI)
+  U            | Update current IMEI (requires 15-digit IMEI)
+  R            | Read current IMEI
+  C            | Check IMEI status
+
+IMEI:
+  Must be a valid 15-digit number for Write/Update operations
+
+Examples:
+  $(basename "$0") D
+  $(basename "$0") W 123456789012345
+EOF
+}
+
+error_exit() {
+    echo "Error: $1" >&2
+    exit 1
+}
+
+validate_imei() {
+    case "$ARG_IMEI" in
+        [0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]) return 0 ;;
+        *) error_exit "Invalid IMEI must be 15 numeric digits." ;;
+    esac
+}
+
+check_imei() {
+    CHECK_IMEI=$(atcmd "AT*MRD_IMEI?" | awk -F: '/^\*MRD_IMEI/ {print $2}' | xargs)
+}
+
+prod_enable() {
+    if ! atexe "serial_atcmd AT*PROD=2" >/dev/null 2>&1; then
+        error_exit "Production failed to enable."
+    fi
+}
+
+prod_disable() {
+    if ! atexe "serial_atcmd AT*PROD=0" >/dev/null 2>&1; then
+    error_exit "Production failed to disable."
+    fi
+}
+
+delete_imei() {
+    prod_enable
+    if ! output=$(atcmd "AT*MRD_IMEI=D"); then
+        error_exit "Failed to execute. Delete operation."
+    else
+        check_imei
+        if ! [ -n "$CHECK_IMEI" ]; then
+            echo "IMEI successfully deleted."
+            if prod_disable; then
+                reboot_cp
+            fi
+        else
+            error_exit "Failed to delete IMEI."
+        fi
+    fi
+}
+
+write_update_imei() {
+    validate_imei
+    prod_enable
+    case "$ARG_METHOD" in
+        U|u) ACTION="Update" ;;
+        W|w) ACTION="Write" ;;
+    esac
+    if ! output=$(atcmd "AT*MRD_IMEI=$ARG_METHOD,0101,12NOV2010,$ARG_IMEI"); then
+        error_exit "Failed to execute. $ACTION operation."
+    else
+        check_imei
+        if [ "$CHECK_IMEI" = "$ARG_IMEI" ]; then
+            echo "$ACTION IMEI successfully."
+            if prod_disable; then
+                reboot_cp
+            fi
+        else
+            error_exit "$ACTION IMEI failed."
+        fi
+    fi
+}
+
+read_check_imei() {
+    READ_IMEI=$(atcmd "AT*MRD_IMEI=R" | awk '/^\*MRD_IMEI/ {print}' | cut -c11- | xargs)
+    check_imei
+    case "$ARG_METHOD" in
+        R|r) RESULT="$READ_IMEI" ;;
+        C|c) RESULT="$CHECK_IMEI" ;;
+    esac
+    if [ -n "$RESULT" ]; then
+        echo "IMEI: $RESULT"
+    else
+        error_exit "Failed to read IMEI or no IMEI found."
+    fi
+}
+
+reboot_cp() {
+    if atexe "reboot" >/dev/null 2>&1; then
+        echo "System will reboot..."
+    else
+        error_exit "Reboot command failed. Restart device manually."
+    fi
+}
+
+case "$ARG_METHOD" in
+    H|h) show_usage ;;
+    D|d) delete_imei ;;
+    W|w|U|u) write_update_imei ;;
+    R|r|C|c) read_check_imei ;;
+    '') error_exit "No command specified." ;;
+    *) error_exit "Invalid <Method>. Use '$(basename "$0") H' for more details." ;;
+esac
+
+exit 0

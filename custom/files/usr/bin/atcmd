@@ -1,0 +1,40 @@
+#!/bin/sh
+
+# Copyright (c) 2023 LENAR
+
+ACM_PATTERN="ttyACM*"
+ACM=$(find /dev -name "$ACM_PATTERN" | head -n1)
+ARG_AT="$1"
+
+show_usage() {
+    cat <<EOF
+Usage: $(basename "$0") <AT Command>
+
+Example:
+  $(basename "$0") AT+CLAC
+
+EOF
+}
+
+error_exit() {
+    echo "Error: $1" >&2
+    exit 1
+}
+
+if [ -z "$ACM" ]; then
+    error_exit "No device found matching /dev/$ACM_PATTERN"
+fi
+
+if [ $# -ne 1 ]; then
+    show_usage
+    error_exit "Exactly one AT command must be specified."
+fi
+
+if ! echo "$ARG_AT" | grep -qi '^AT'; then
+    show_usage
+    error_exit "Invalid AT command. It must start with 'AT'."
+fi
+
+sms_tool -d "$ACM" at "$ARG_AT"
+
+exit 0

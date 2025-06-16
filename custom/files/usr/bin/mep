@@ -1,0 +1,90 @@
+#!/bin/sh
+
+# Copyright (c) 2023 LENAR
+
+MEP=$(atexe "strings /dev/mtd1" | grep -Eo "[0-9]{8}" | tail -1)
+ARG_METHOD="$1"
+ARG_PN="$2"
+
+show_usage() {
+    cat <<EOF
+Usage: $(basename "$0") <Method> [PN]
+
+Method:
+  R            | Read MEP
+  U            | Unlock MEP
+  L            | Lock MEP
+  T            | Test PN
+  S            | Lock Status
+
+PN:
+  Your unlock code (required for <Method> T)
+EOF
+}
+
+error_exit() {
+    echo "Error: $1" >&2
+    exit 1
+}
+
+check_mep() {
+    if [ -z "$MEP" ]; then
+        error_exit "MEP not found."
+    fi
+}
+
+read_mep() {
+    check_mep
+    echo "PN: $MEP"
+}
+
+unlock_mep() {
+    check_mep
+    if ! atcmd "AT+CLCK=PN,0,$MEP,16" >/dev/null 2>&1; then
+        error_exit "Failed to execute. Unlock command."
+    fi
+    show_status
+}
+
+lock_mep() {
+    check_mep
+    if ! atcmd "AT+CLCK=PN,1,$MEP,16" >/dev/null 2>&1; then
+        error_exit "Failed to execute. Lock command."
+    fi
+    show_status
+}
+
+test_pn() {
+    check_mep
+    case "$ARG_PN" in
+        '') error_exit "[PN] required for <Method> T." ;;
+        *[!0-9]*) error_exit "[PN] must be numeric." ;;
+    esac
+    if ! atcmd "AT+CLCK=PN,0,$ARG_PN,16" >/dev/null 2>&1; then
+        error_exit "Failed to execute. Test command."
+    fi
+    show_status
+}
+
+show_status() {
+    CHECK=$(atcmd "AT+CLCK=PN,2" | awk -F':' '/^\+CLCK/ {print $2}' | xargs)
+    case "$CHECK" in
+        0) STATUS="Unlocked" ;;
+        1) STATUS="Locked" ;;
+        *) STATUS="Unknown" ;;
+    esac
+    echo "Status: $STATUS"
+}
+
+case "$ARG_METHOD" in
+    H|h) show_usage ;;
+    R|r) read_mep ;;
+    U|u) unlock_mep ;;
+    L|l) lock_mep ;;
+    T|t) test_pn ;;
+    S|s) show_status ;;
+    '') error_exit "No command specified." ;;
+    *) error_exit "Invalid <Method>. Use '$(basename "$0") H' for more details." ;;
+esac
+
+exit 0

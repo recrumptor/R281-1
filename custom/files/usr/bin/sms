@@ -1,0 +1,61 @@
+#!/bin/sh
+
+# Copyright (c) 2023 LENAR
+
+ARG_LOCATION="$1"
+
+show_usage(){
+    cat <<EOF
+Usage: $(basename "$0") <Location>
+
+Location:
+  D            | Use Device Storage
+  S            | Use SIM Storage
+  C            | Check configuration
+EOF
+}
+
+error_exit() {
+    echo "Error: $1" >&2
+    exit 1
+}
+
+change_location(){
+    case "$ARG_LOCATION" in
+        D|d) ARG_LOCATION="0" ;;
+        S|s) ARG_LOCATION="1" ;;
+    esac
+    if ! atexe "printf 'config SMS SMS\noption report 0\noption save_location $ARG_LOCATION\noption over_mode 0\noption validity 143\noption center_num N' > /etc/config/smsconfig" >/dev/null 2>&1; then
+        error_exit "Failed to update SMS configuration."
+    else
+        case "$ARG_LOCATION" in
+            0) LOCATION="Device" ;;
+            1) LOCATION="SIM" ;;
+        esac
+        echo "SMS storage location set to $LOCATION"
+    fi
+}
+
+check_location(){
+    SMSCONFIG=$(atexe "cat /etc/config/smsconfig" | awk '/save_location/ {print $3}' | xargs)
+    if [ -z "$SMSCONFIG" ]; then
+        error_exit "Unable to read the configuration file. Please ensure it exists and is readable."
+    else
+        case "$SMSCONFIG" in
+            0) RESULT="Device storage" ;;
+            1) RESULT="SIM storage" ;;
+            *) RESULT="Unknown" ;;
+        esac
+        echo "SMS location: $RESULT"
+    fi
+}
+
+case "$ARG_LOCATION" in
+    H|h) show_usage ;;
+    D|d|S|s) change_location ;;
+    C|c) check_location ;;
+    '') error_exit "No command specified." ;;
+    *) error_exit "Invalid <Location>. Use '$(basename "$0") H' for more details." ;;
+esac
+
+exit 0

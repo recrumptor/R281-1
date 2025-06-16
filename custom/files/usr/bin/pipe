@@ -1,0 +1,65 @@
+#!/bin/sh
+
+# Copyright (c) 2023 LENAR
+
+ARG_MODE="$1"
+
+show_usage() {
+    cat <<EOF
+Usage: $(basename "$0") <Mode>
+
+Modes:
+  D            | Disable PIPE mode
+  E            | Enable PIPE mode
+  S            | Show PIPE status
+EOF
+}
+
+error_exit() {
+    echo "Error: $1" >&2
+    exit 1
+}
+
+change_mode() {
+    case "$ARG_MODE" in
+        D|d) ARG_MODE="0";;
+        E|e) ARG_MODE="1";;
+    esac
+    if ! atcmd "AT+ACONFIG=\"PIPE=$ARG_MODE\"" >/dev/null 2>&1; then
+        error_exit "Failed to set PIPE mode."
+    else
+        echo "PIPE mode changed."
+        factory_reset
+    fi
+}
+
+show_status() {
+    if ! OUTPUT=$(atcmd "AT+ACONFIG?"); then
+        error_exit "Failed to get PIPE status."
+    fi
+    PIPE_MODE=$(echo "$OUTPUT" | awk -F'PIPE=' '{print $2}' | cut -d, -f1 | xargs)
+    case "$PIPE_MODE" in
+        0) STATUS="Disabled" ;;
+        1) STATUS="Enabled" ;;
+        *) STATUS="Unknown" ;;
+    esac
+    echo "PIPE mode: $STATUS"
+}
+
+factory_reset() {
+    if ! atexe "jffs2reset -y && reboot" >/dev/null 2>&1; then
+        error_exit "Failed to reset to factory settings."
+    else
+        echo "Resetting to factory settings..."
+    fi
+}
+
+case "$ARG_MODE" in
+    D|d|E|e) change_mode ;;
+    S|s) show_status ;;
+    H|h) show_usage ;;
+    '') error_exit "No command specified." ;;
+    *) error_exit "Invalid <Mode>. Use '$(basename "$0") H' for more details." ;;
+esac
+
+exit 0

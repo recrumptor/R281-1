@@ -1,0 +1,46 @@
+#!/bin/sh
+
+# Copyright (c) 2023 LENAR
+
+ACM_PATTERN="ttyACM*"
+ACM=$(find /dev -name "$ACM_PATTERN" | head -n1)
+ARG_EXE="$*"
+
+show_usage() {
+    cat <<EOF
+Usage: $(basename "$0") <Command>
+
+Commands:
+  env            | Display environment variables
+  getprop        | Get system properties
+  ifconfig       | Display network interface configuration
+  jffs2reset -y  | Reset JFFS2 filesystem
+  reboot         | Reboot the system
+
+Examples:
+  $(basename "$0") env
+  $(basename "$0") reboot
+EOF
+}
+
+error_exit() {
+    echo "Error: $1" >&2
+    exit 1
+}
+
+run() {
+    if [ -z "$ACM" ]; then
+        error_exit "No device found matching /dev/$ACM_PATTERN"
+    fi
+    if ! sms_tool -d "$ACM" at "AT%EXE=\"$ARG_EXE\""; then
+        error_exit "Failed to execute command '$ARG_EXE'"
+    fi
+}
+
+case "$ARG_EXE" in
+    H|h) show_usage ;;
+    '') error_exit "No command specified. Use '$(basename "$0")' for more details." ;;
+    *) run ;;
+esac
+
+exit 0
