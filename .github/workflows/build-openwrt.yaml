@@ -62,7 +62,7 @@ on:
         default: true
 
 env:
-  SOURCE_URL: https://github.com/0x4C334E3438/openwrt
+  SOURCE_URL: https://github.com/recrumptor/openwrt
   SOURCE_ORIGIN: https://github.com/openwrt/openwrt
   SOURCE_BRANCH: ${{ github.event.inputs.branch }}
   FEEDS_SH: feeds.sh
