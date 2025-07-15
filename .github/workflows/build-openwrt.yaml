@@ -141,15 +141,6 @@ jobs:
           git merge upstream/$SOURCE_BRANCH
           echo "OPENWRT_ROOT_PATH=$PWD" >> $GITHUB_ENV
           echo "OPENWRT_ROOT_PATH=$PWD" >> $GITHUB_OUTPUT
-
-      - name: Fix Official Feeds Branch
-        run: |
-          cd ${{ env.OPENWRT_ROOT_PATH }}
-          sed -i 's/\.git\^.*$/.git;openwrt-23.05/' feeds.conf.default
-          echo "--- Content of feeds.conf.default after sed ---"
-          cat feeds.conf.default
-          echo "--- End of feeds.conf.default content ---"
-          echo "Official feeds modified to use openwrt-23.05 branch."
        
                     
       - name: Generate Toolchain Configuration
