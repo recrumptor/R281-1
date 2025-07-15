@@ -388,13 +388,45 @@ jobs:
 
       - name: Install Feeds
         run: |
-          cp ./scripts/$FEEDS_PKG_SH $OPENWRT_ROOT_PATH/$FEEDS_PKG_SH
+          # Переходим в корневую директорию OpenWrt
           cd $OPENWRT_ROOT_PATH
+          
+          # Очищаем фиды перед обновлением, чтобы избежать старых проблем
           ./scripts/feeds clean
-          ./scripts/feeds update -a
-          chmod +x ./$FEEDS_PKG_SH && ./$FEEDS_PKG_SH
-          ./scripts/feeds update -a
-          ./scripts/feeds install -a
+
+          # Настройка Git буфера для более стабильной загрузки
+          git config --global http.postBuffer 524288000 # 500 MB
+          git config --global http.lowSpeedLimit 0
+          git config --global http.lowSpeedTime 999999
+
+          # Цикл повторных попыток для feeds update -a
+          MAX_RETRIES=5 # Максимальное количество попыток
+          RETRY_COUNT=0 # Счетчик текущих попыток
+          while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+              echo "--- Попытка обновления фидов $((RETRY_COUNT + 1)) из $MAX_RETRIES ---"
+              # Используем V=s для подробного лога, чтобы видеть, что происходит
+              if ./scripts/feeds update -a V=s; then
+                  echo "feeds update -a успешно завершено."
+                  break # Выходим из цикла, если успешно
+              else
+                  echo "feeds update -a завершилось ошибкой. Повтор через 15 секунд..."
+                  RETRY_COUNT=$((RETRY_COUNT + 1))
+                  sleep 15 # Ждем 15 секунд перед следующей попыткой
+              fi
+          done
+
+          # Если все попытки неудачны, завершаем процесс с ошибкой
+          if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
+              echo "feeds update -a не удалось после $MAX_RETRIES попыток. Прерываю сборку."
+              exit 1
+          fi
+
+          # Теперь запускаем скрипт для удаления пакетов (если он необходим)
+          # Убедитесь, что FEEDS_PKG_SH определен
+          chmod +x ./scripts/$FEEDS_PKG_SH && ./scripts/$FEEDS_PKG_SH
+
+          # Устанавливаем все пакеты из фидов
+          ./scripts/feeds install -a V=s
 
       - name: Load Custom Configuration And Vermagic
         run: |
