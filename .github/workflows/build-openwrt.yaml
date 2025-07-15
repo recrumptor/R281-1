@@ -10,19 +10,11 @@ on:
   repository_dispatch:
   workflow_dispatch:
     inputs:
-      source_type: # Добавить новый input для выбора типа источника
-        description: "Source Type (Branch or Tag)"
-        type: choice
-        required: true
-        default: "branch"
-        options:
-          - branch
-          - tag
-      source_ref: # Изменить branch на более общий source_ref
-        description: "Source Reference (Branch Name or Tag Name)"
+      release_tag:
+        description: "OpenWrt Release Tag (e.g., v23.05.5)"
         type: string
         required: true
-        default: "v23.05.5" # Укажите здесь либо openwrt-23.05 для ветки, либо v23.05.5 для тега
+        default: "v23.05.5" # Установите желаемый тег по умолчанию для стабильной втки, либо v23.05.5 для тега
       config_file:
         description: "Config Name"
         type: choice
@@ -137,19 +129,11 @@ jobs:
       - name: Clone Source Code
         working-directory: ${{ env.WORK_DIR }}
         env:
-          SOURCE_URL: ${{ inputs.source_url }}
-          SOURCE_REF: ${{ inputs.source_ref }}
-          SOURCE_TYPE: ${{ inputs.source_type }}
+          SOURCE_URL: https://github.com/openwrt/openwrt.git # Предполагается, что это ваш URL, если он не из inputs
+          RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
-          echo "Cloning OpenWrt source code..."
-          if [ "$SOURCE_TYPE" == "branch" ]; then
-            git clone --single-branch --branch "$SOURCE_REF" "$SOURCE_URL" workspace/openwrt
-          elif [ "$SOURCE_TYPE" == "tag" ]; then
-            git clone --branch "$SOURCE_REF" "$SOURCE_URL" workspace/openwrt --depth 1 # --depth 1 для тегов часто бывает достаточно
-          else
-            echo "Invalid source_type. Must be 'branch' or 'tag'."
-            exit 1
-          fi
+          echo "Cloning OpenWrt source code from tag: $RELEASE_TAG"
+          git clone --branch "$RELEASE_TAG" "$SOURCE_URL" workspace/openwrt --depth 1
           echo "SOURCE_DIR=$(pwd)/workspace/openwrt" >> $GITHUB_ENV
           echo "CURRENT_DATE=$(date +"%Y-%m-%d")" >> $GITHUB_ENV
 
