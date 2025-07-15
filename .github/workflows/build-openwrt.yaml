@@ -11,13 +11,13 @@ on:
   workflow_dispatch:
     inputs:
       branch:
-        description: "Source Branch"
-        type: choice
-        required: true
-        options:
-          - openwrt-23.05.5
-          - openwrt-23.05
-          - openwrt-24.10
+        description: "Source Branch"
+        type: choice
+        required: true
+        options:
+          - openwrt-23.05.5
+          - openwrt-23.05
+          - openwrt-24.10
       config_file:
         description: "Config Name"
         type: choice
