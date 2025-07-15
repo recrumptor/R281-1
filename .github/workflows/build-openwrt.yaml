@@ -10,11 +10,14 @@ on:
   repository_dispatch:
   workflow_dispatch:
     inputs:
-      release_tag:
-        description: "OpenWrt Release Tag (e.g., v23.05.5)"
-        type: string
-        required: true
-        default: "v23.05.5" # Установите желаемый тег по умолчанию для стабильной втки, либо v23.05.5 для тега
+      branch:
+        description: "Source Branch"
+        type: choice
+        required: true
+        options:
+          - openwrt-23.05.5
+          - openwrt-23.05
+          - openwrt-24.10
       config_file:
         description: "Config Name"
         type: choice
@@ -127,15 +130,18 @@ jobs:
           df -hT
 
       - name: Clone Source Code
-        working-directory: ${{ env.WORK_DIR }}
-        env:
-          SOURCE_URL: https://github.com/openwrt/openwrt.git # Предполагается, что это ваш URL, если он не из inputs
-          RELEASE_TAG: ${{ inputs.release_tag }}
+        id: clone
         run: |
-          echo "Cloning OpenWrt source code from tag: $RELEASE_TAG"
-          git clone --branch "$RELEASE_TAG" "$SOURCE_URL" workspace/openwrt --depth 1
-          echo "SOURCE_DIR=$(pwd)/workspace/openwrt" >> $GITHUB_ENV
-          echo "CURRENT_DATE=$(date +"%Y-%m-%d")" >> $GITHUB_ENV
+          git clone --single-branch $SOURCE_URL -b $SOURCE_BRANCH workspace/openwrt
+          cd workspace/openwrt
+          git config --global user.name "github-actions"
+          git config --global user.email "github-actions@github.com"
+          git remote add upstream $SOURCE_ORIGIN
+          git fetch upstream $SOURCE_BRANCH
+          git merge upstream/$SOURCE_BRANCH
+          echo "OPENWRT_ROOT_PATH=$PWD" >> $GITHUB_ENV
+          echo "OPENWRT_ROOT_PATH=$PWD" >> $GITHUB_OUTPUT
+
 
       - name: Generate Toolchain Configuration
         run: |
