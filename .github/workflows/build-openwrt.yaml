@@ -10,14 +10,19 @@ on:
   repository_dispatch:
   workflow_dispatch:
     inputs:
-      branch:
-        description: "Source Branch"
+      source_type: # Добавить новый input для выбора типа источника
+        description: "Source Type (Branch or Tag)"
         type: choice
         required: true
+        default: "branch"
         options:
-          - openwrt-23.05.5
-          - openwrt-23.05
-          - openwrt-24.10
+          - branch
+          - tag
+      source_ref: # Изменить branch на более общий source_ref
+        description: "Source Reference (Branch Name or Tag Name)"
+        type: string
+        required: true
+        default: "v23.05.5" # Укажите здесь либо openwrt-23.05 для ветки, либо v23.05.5 для тега
       config_file:
         description: "Config Name"
         type: choice
@@ -130,17 +135,23 @@ jobs:
           df -hT
 
       - name: Clone Source Code
-        id: clone
+        working-directory: ${{ env.WORK_DIR }}
+        env:
+          SOURCE_URL: ${{ inputs.source_url }}
+          SOURCE_REF: ${{ inputs.source_ref }}
+          SOURCE_TYPE: ${{ inputs.source_type }}
         run: |
-          git clone --single-branch $SOURCE_URL -b $SOURCE_BRANCH workspace/openwrt
-          cd workspace/openwrt
-          git config --global user.name "github-actions"
-          git config --global user.email "github-actions@github.com"
-          git remote add upstream $SOURCE_ORIGIN
-          git fetch upstream $SOURCE_BRANCH
-          git merge upstream/$SOURCE_BRANCH
-          echo "OPENWRT_ROOT_PATH=$PWD" >> $GITHUB_ENV
-          echo "OPENWRT_ROOT_PATH=$PWD" >> $GITHUB_OUTPUT
+          echo "Cloning OpenWrt source code..."
+          if [ "$SOURCE_TYPE" == "branch" ]; then
+            git clone --single-branch --branch "$SOURCE_REF" "$SOURCE_URL" workspace/openwrt
+          elif [ "$SOURCE_TYPE" == "tag" ]; then
+            git clone --branch "$SOURCE_REF" "$SOURCE_URL" workspace/openwrt --depth 1 # --depth 1 для тегов часто бывает достаточно
+          else
+            echo "Invalid source_type. Must be 'branch' or 'tag'."
+            exit 1
+          fi
+          echo "SOURCE_DIR=$(pwd)/workspace/openwrt" >> $GITHUB_ENV
+          echo "CURRENT_DATE=$(date +"%Y-%m-%d")" >> $GITHUB_ENV
 
       - name: Generate Toolchain Configuration
         run: |
