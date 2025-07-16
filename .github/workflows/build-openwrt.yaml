@@ -493,6 +493,59 @@ jobs:
           make package/compile -j$(($(nproc) + 1)) IGNORE_ERRORS=1 || make package/compile -j1 V=s IGNORE_ERRORS=1
           make package/index
 
+      - name: Get Compiled Kernel Vermagic
+        run: |
+          cd "$OPENWRT_ROOT_PATH"
+          
+          # Путь к директории скомпилированного ядра
+          # Используем find для более надежного поиска, так как точный путь может меняться
+          KERNEL_DIR=$(find build_dir -maxdepth 3 -name "linux-*" -type d | grep "target-${DEVICE_TARGET}" | head -n 1)
+
+          if [ -z "$KERNEL_DIR" ]; then
+            echo "Error: KERNEL_DIR not found. Check build_dir structure."
+            exit 1
+          fi
+          echo "Debug: Detected KERNEL_DIR is $KERNEL_DIR"
+          
+          # Попытка получить vermagic из файла .vermagic
+          if [ -f "$KERNEL_DIR/.vermagic" ]; then
+            echo "--- VERMAGIC from .vermagic file (PRIMARY) ---"
+            VERMAGIC_FROM_FILE=$(cat "$KERNEL_DIR/.vermagic")
+            echo "$VERMAGIC_FROM_FILE"
+            echo "::set-output name=build_vermagic::$VERMAGIC_FROM_FILE" # Сохраняем в output для дальнейшего использования
+          else
+            echo "Warning: .vermagic file not found in $KERNEL_DIR. Attempting to extract from a kmod."
+          fi
+
+          # Попытка получить vermagic из скомпилированного модуля (например, kmod-tun)
+          # Этот метод требует, чтобы kmod-tun был выбран в вашем .config (CONFIG_PACKAGE_kmod-tun=m)
+          # Это более надежный способ получить "реальный" vermagic, который видит ядро
+          TUN_IPK_PATH="bin/targets/${DEVICE_TARGET}/${DEVICE_SUBTARGET}/packages"
+          TUN_IPK_FILE=$(find "$TUN_IPK_PATH" -name "kmod-tun_*.ipk" | head -n 1)
+
+          if [ -n "$TUN_IPK_FILE" ]; then
+            echo "--- VERMAGIC from kmod-tun.ko (SECONDARY) ---"
+            mkdir -p ./tmp_mod_extract/
+            ar x "$TUN_IPK_FILE" data.tar.gz
+            tar -xzf data.tar.gz -C ./tmp_mod_extract/
+            TUN_KO=$(find ./tmp_mod_extract/ -name "tun.ko" | head -n 1)
+            
+            if [ -n "$TUN_KO" ]; then
+                # Ищем vermagic строку (начинается с версии ядра)
+                VERMAGIC_STRING=$(strings "$TUN_KO" | grep -oE '^5\.15\.[0-9]+\+[a-f0-9]+(-[0-9]+)?_mipsel_24kc(_musl)?')
+                if [ -z "$VERMAGIC_STRING" ]; then # Если не нашли в таком формате, ищем более общий
+                    VERMAGIC_STRING=$(strings "$TUN_KO" | grep -oE '^5\.15\.[0-9]+.*')
+                fi
+                echo "$VERMAGIC_STRING"
+                echo "::set-output name=build_vermagic_from_kmod::$VERMAGIC_STRING"
+            else
+                echo "Warning: tun.ko not found inside extracted IPK."
+            fi
+            rm -rf data.tar.gz ./tmp_mod_extract/
+          else
+            echo "Warning: kmod-tun IPK not found. Cannot extract vermagic from module. Ensure CONFIG_PACKAGE_kmod-tun=m is in .config."
+          fi
+
       - name: Generate Firmware
         id: generate
         run: |
