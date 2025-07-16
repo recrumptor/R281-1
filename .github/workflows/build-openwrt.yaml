@@ -69,7 +69,7 @@ env:
   FIRMWARE_RELEASE: ${{ github.event.inputs.firmware_release }}
   TOOLCHAIN_RELEASE: ${{ github.event.inputs.toolchain_release }}
   TOOLCHAIN_REBUILD: ${{ github.event.inputs.toolchain_rebuild }}
-  VERMAGIC: ${{ github.event.inputs.vermagic }}
+  VERMAGIC: ${{ env.VERMAGIC }} # <-- Используем env.VERMAGIC, так как input уже преобразован
   TOKEN: ${{ secrets.GITHUB_TOKEN }}
   TZ: UTC
 
@@ -87,7 +87,7 @@ jobs:
       DEVICE_TARGET: ${{ steps.env.outputs.DEVICE_TARGET }}
       DEVICE_SUBTARGET: ${{ steps.env.outputs.DEVICE_SUBTARGET }}
       TOOLCHAIN_IMAGE: ${{ steps.env.outputs.TOOLCHAIN_IMAGE }}
-      BUILD_DATE: ${{ steps.env.outputs.BUILD_DATE }} # <-- ИЗМЕНЕНО: Добавлено в outputs
+      BUILD_DATE: ${{ steps.env.outputs.BUILD_DATE }}
       REBUILD_CHECK: ${{ steps.hash.outputs.REBUILD_CHECK }}
 
     steps:
@@ -113,7 +113,7 @@ jobs:
       - name: Checkout Your Repository (to access R281-1 and openwrt directories)
         uses: actions/checkout@v4
         # Если имя вашего репозитория - "R281-1", то его содержимое будет прямо в ${{ github.workspace }}/
-        # Не указываем 'path', так как по умолчанию клонируется в текущий рабочий каталог ($GITHUB_WORKSPACE)
+        # Не указываем 'path' так как по умолчанию клонируется в текущий рабочий каталог ($GITHUB_WORKSPACE)
 
       - name: Debug: List contents after checkout
         run: |
@@ -126,7 +126,6 @@ jobs:
           DEBIAN_FRONTEND: noninteractive
         run: |
           sudo -E apt-get -qq update
-          # ИЗМЕНЕНО: Добавлено kmod для modinfo
           sudo -E apt-get -qq install -y kmod $(curl -fsSL https://pastebin.com/raw/y5mk4S1a)
           sudo -E apt-get -qq autoremove --purge
           sudo -E apt-get -qq clean
@@ -135,7 +134,6 @@ jobs:
       - name: Clone OpenWrt Source Code
         id: clone_openwrt
         run: |
-          # Клонируем OpenWrt в workspace/openwrt
           git clone --single-branch "$SOURCE_URL" -b "$SOURCE_BRANCH" workspace/openwrt
           cd workspace/openwrt
           git config --global user.name "github-actions"
@@ -161,14 +159,11 @@ jobs:
           echo "CURRENT_BRANCH=$CURRENT_BRANCH" >> "$GITHUB_ENV"
           echo "CURRENT_BRANCH=$CURRENT_BRANCH" >> "$GITHUB_OUTPUT"
           
-          # Необходимо сначала загрузить .config из вашего репозитория, чтобы определить DEVICE_TARGET/SUBTARGET
           if [[ "$CONFIG_LINK" == "true" && -n "$CONFIG_URL" ]]; then
             curl -s "$CONFIG_URL" -o ".config"
           else
-            # ИСПРАВЛЕНО: Копируем config файл из вашей директории config/
             cp "${{ github.workspace }}/config/$CONFIG_FILE" ".config"
           fi
-          # Применяем make defconfig, чтобы .config был валидным
           make defconfig
           
           export DEVICE_NAME=$(grep 'CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/')
@@ -184,14 +179,13 @@ jobs:
           echo "DEVICE_SUBTARGET=$DEVICE_SUBTARGET" >> "$GITHUB_ENV"
           echo "DEVICE_SUBTARGET=$DEVICE_SUBTARGET" >> "$GITHUB_OUTPUT"
           
-          # TOOLCHAIN_IMAGE теперь включает TARGET и SUBTARGET
           export TOOLCHAIN_IMAGE="toolchain-$SOURCE_OWNER-$SOURCE_REPO-$SOURCE_BRANCH-$DEVICE_TARGET-$DEVICE_SUBTARGET"
           echo "TOOLCHAIN_IMAGE=$TOOLCHAIN_IMAGE" >> "$GITHUB_ENV"
           echo "TOOLCHAIN_IMAGE=$TOOLCHAIN_IMAGE" >> "$GITHUB_OUTPUT"
           
           export BUILD_DATE=$(date +"%Y-%m-%d-%H%M")
           echo "BUILD_DATE=$BUILD_DATE" >> "$GITHUB_ENV"
-          echo "BUILD_DATE=$BUILD_DATE" >> "$GITHUB_OUTPUT" # <-- ИЗМЕНЕНО: Добавлено в output шага
+          echo "BUILD_DATE=$BUILD_DATE" >> "$GITHUB_OUTPUT"
           
       - name: Get Release Hash
         continue-on-error: true
@@ -257,7 +251,7 @@ jobs:
           cd "$OPENWRT_ROOT_PATH"
           echo "$CURRENT_HASH" > "$GITHUB_WORKSPACE/output/$TOOLCHAIN_IMAGE.hash"
           ls -lh "$GITHUB_WORKSPACE/output"
-          echo "::notice title=Toolchain Build Summary::Toolchain for branch ${{ env.SOURCE_BRANCH }}, target ${{ env.DEVICE_TARGET }}/${{ env.DEVICE_SUBTARGET }} built successfully. Image: ${{ env.TOOLCHAIN_IMAGE }}.img." # <-- ДОБАВЛЕНО: Summary
+          echo "::notice title=Toolchain Build Summary::Toolchain for branch ${{ env.SOURCE_BRANCH }}, target ${{ env.DEVICE_TARGET }}/${{ env.DEVICE_SUBTARGET }} built successfully. Image: ${{ env.TOOLCHAIN_IMAGE }}.img."
 
       - name: Upload Toolchain Image To Artifact
         if: ${{ env.TOOLCHAIN_RELEASE != 'true' && steps.hash.outputs.REBUILD_CHECK == 'true' }}
@@ -319,7 +313,7 @@ jobs:
           echo "DEVICE_TARGET=${{ needs.Toolchain.outputs.DEVICE_TARGET }}" >> "$GITHUB_ENV"
           echo "DEVICE_SUBTARGET=${{ needs.Toolchain.outputs.DEVICE_SUBTARGET }}" >> "$GITHUB_ENV"
           echo "TOOLCHAIN_IMAGE=${{ needs.Toolchain.outputs.TOOLCHAIN_IMAGE }}" >> "$GITHUB_ENV"
-          echo "BUILD_DATE=${{ needs.Toolchain.outputs.BUILD_DATE }}" >> "$GITHUB_ENV" # <-- ИЗМЕНЕНО: Берем из outputs предыдущего джоба
+          echo "BUILD_DATE=${{ needs.Toolchain.outputs.BUILD_DATE }}" >> "$GITHUB_ENV"
           echo "REBUILD_CHECK=${{ needs.Toolchain.outputs.REBUILD_CHECK }}" >> "$GITHUB_ENV"
 
       - name: Maximize Build Space
@@ -336,7 +330,6 @@ jobs:
 
       - name: Checkout Your Repository (to access R281-1 and openwrt directories)
         uses: actions/checkout@v4
-        # Если имя вашего репозитория - "R281-1", то его содержимое будет прямо в ${{ github.workspace }}/
 
       - name: Debug: List contents after checkout (Build Job)
         run: |
@@ -349,7 +342,6 @@ jobs:
           DEBIAN_FRONTEND: noninteractive
         run: |
           sudo -E apt-get -qq update
-          # ИЗМЕНЕНО: Добавлено kmod для modinfo
           sudo -E apt-get -qq install -y kmod $(curl -fsSL https://pastebin.com/raw/y5mk4S1a)
           sudo -E apt-get -qq autoremove --purge
           sudo -E apt-get -qq clean
@@ -384,13 +376,11 @@ jobs:
           mkdir -p openwrt-ro openwrt workdir overlay
           sudo mount -o loop "$TOOLCHAIN_IMAGE.img" openwrt-ro
           sudo mount -t overlay overlay -o lowerdir=openwrt-ro,upperdir=overlay,workdir=workdir openwrt
-          # Важно: OPENWRT_ROOT_PATH теперь указывает на смонтированную директорию
           echo "OPENWRT_ROOT_PATH=$(realpath openwrt)" >> "$GITHUB_ENV"
           echo "Toolchain prepared and mounted to $(realpath openwrt)"
-          # ИЗМЕНЕНО: Отмонтируем файловые системы после подготовки
           sudo umount openwrt
           sudo umount openwrt-ro
-          rm -rf openwrt-ro overlay workdir # Удаляем временные директории overlay
+          rm -rf openwrt-ro overlay workdir
 
       - name: Update Source Code (inside mounted toolchain)
         run: |
@@ -406,7 +396,6 @@ jobs:
           if [[ "$CONFIG_LINK" == "true" && -n "$CONFIG_URL" ]]; then
             curl -s "$CONFIG_URL" -o ".config"
           else
-            # ИСПРАВЛЕНО: Копируем config файл из вашей директории config/
             cp "${{ github.workspace }}/config/$CONFIG_FILE" ".config"
           fi
           make defconfig
@@ -414,19 +403,16 @@ jobs:
       - name: Inject Correct Kernel Vermagic from official source
         if: ${{ env.VERMAGIC == 'true' }}
         run: |
-          # ИСПРАВЛЕНО: Копируем скрипт vermagic_update.sh из вашего репозитория (корня)
           cp "${{ github.workspace }}/vermagic_update.sh" "$OPENWRT_ROOT_PATH/vermagic_update.sh"
           cd "$OPENWRT_ROOT_PATH"
           chmod +x ./vermagic_update.sh
-          # Параметры: DEVICE_TARGET, DEVICE_SUBTARGET
           ./vermagic_update.sh ${{ env.DEVICE_TARGET }} ${{ env.DEVICE_SUBTARGET }}
         env:
           # Можно указать явно URL снапшотов OpenWrt, если нужно отличное от downloads.openwrt.org
-          REPO_URL: https://downloads.openwrt.org/snapshots/ 
+          REPO_URL: https://downloads.openwrt.org/snapshots/ # <-- ИСПРАВЛЕНО ЗДЕСЬ!
 
       - name: Load Custom Feeds
         run: |
-          # ИСПРАВЛЕНО: Копируем feeds.sh из вашей директории scripts/
           cp "${{ github.workspace }}/scripts/$FEEDS_SH" "$OPENWRT_ROOT_PATH/$FEEDS_SH"
           cd "$OPENWRT_ROOT_PATH"
           chmod +x "./$FEEDS_SH" && "./$FEEDS_SH"
@@ -460,9 +446,7 @@ jobs:
               exit 1
           fi
 
-          # ИСПРАВЛЕНО: Копируем feeds_pkg.sh из вашей директории scripts/
           cp "${{ github.workspace }}/scripts/$FEEDS_PKG_SH" "$OPENWRT_ROOT_PATH/$FEEDS_PKG_SH"
-          # Теперь выполняем его из OpenWrt ROOT_PATH
           chmod +x "./$FEEDS_PKG_SH" && "./$FEEDS_PKG_SH"
 
           ./scripts/feeds install -a V=s
@@ -477,10 +461,8 @@ jobs:
 
       - name: Load DIY
         run: |
-          # ИСПРАВЛЕНО: Копируем DIY скрипт из вашей директории scripts/
           cp "${{ github.workspace }}/scripts/$DIY_SH" "$OPENWRT_ROOT_PATH/$DIY_SH"
           
-          # Перемещаем директорию custom из корневой директории вашего репозитория в корень OpenWrt
           if [ -d "${{ github.workspace }}/custom" ]; then
             mv "${{ github.workspace }}/custom" "$OPENWRT_ROOT_PATH/custom"
           fi
@@ -514,115 +496,4 @@ jobs:
           
           BUILD_DIR_PATH="build_dir/target-${{ env.DEVICE_PLATFORM }}/linux-${{ env.DEVICE_TARGET }}_${{ env.DEVICE_SUBTARGET }}"
           
-          KERNEL_DIR=$(find "$BUILD_DIR_PATH" -maxdepth 1 -type d -name "linux-*" | head -n 1)
-
-          if [ -z "$KERNEL_DIR" ]; then
-            echo "Ошибка: KERNEL_DIR не найдена. Ожидаемый путь: '$BUILD_DIR_PATH/linux-*'."
-            echo "Пожалуйста, проверьте содержимое '$BUILD_DIR_PATH/' для отладки:"
-            ls -R "$BUILD_DIR_PATH"/ || true
-            exit 1
-          fi
-          echo "Отладка: Обнаружена директория KERNEL_DIR: $KERNEL_DIR"
-          
-          if [ -f "$KERNEL_DIR/.vermagic" ]; then
-            echo "--- VERMAGIC из файла .vermagic (ОСНОВНОЙ) ---"
-            VERMAGIC_FROM_FILE=$(cat "$KERNEL_DIR/.vermagic")
-            echo "$VERMAGIC_FROM_FILE"
-            echo "build_vermagic=$VERMAGIC_FROM_FILE" >> "$GITHUB_OUTPUT"
-          else
-            echo "Внимание: Файл .vermagic не найден в "$KERNEL_DIR". Попытка извлечь из kmod."
-          fi
-
-          TUN_IPK_PATH="bin/targets/${{ env.DEVICE_TARGET }}/${{ env.DEVICE_SUBTARGET }}/packages"
-          TUN_IPK_FILE=$(find "$TUN_IPK_PATH" -name "kmod-tun_*.ipk" | head -n 1)
-
-          if [ -n "$TUN_IPK_FILE" ]; then
-            echo "--- VERMAGIC из kmod-tun.ko (ДОПОЛНИТЕЛЬНЫЙ) ---"
-            mkdir -p ./tmp_mod_extract/
-            
-            tar -xf "$TUN_IPK_FILE" -C ./tmp_mod_extract/
-            
-            if [ ! -f ./tmp_mod_extract/data.tar.gz ]; then
-              echo "Ошибка: data.tar.gz не найден после распаковки IPK. Проверьте структуру IPK: $TUN_IPK_FILE"
-              rm -rf ./tmp_mod_extract/
-              exit 1
-            fi
-
-            tar -xzf ./tmp_mod_extract/data.tar.gz -C ./tmp_mod_extract/
-            
-            TUN_KO=$(find ./tmp_mod_extract/ -name "tun.ko" | head -n 1)
-            
-            if [ -n "$TUN_KO" ]; then
-                VERMAGIC_STRING=""
-                if command -v modinfo &> /dev/null; then
-                    VERMAGIC_STRING=$(modinfo "$TUN_KO" | grep ^vermagic | awk '{print $2}')
-                    echo "Vermagic (через modinfo): $VERMAGIC_STRING"
-                else
-                    VERMAGIC_STRING=$(strings "$TUN_KO" | grep -oE '^5\.15\.[0-9]+[^ ]*' | head -n 1)
-                    echo "Vermagic (через strings): $VERMAGIC_STRING"
-                fi
-                
-                echo "build_vermagic_from_kmod=$VERMAGIC_STRING" >> "$GITHUB_OUTPUT"
-            else
-                echo "Внимание: tun.ko не найден внутри распакованного IPK."
-            fi
-            rm -rf ./tmp_mod_extract/ control.tar.gz data.tar.gz
-          else
-            echo "Внимание: IPK kmod-tun не найден. Невозможно извлечь vermagic из модуля. Убедитесь, что CONFIG_PACKAGE_kmod-tun=m находится в .config."
-          fi
-          
-      - name: Generate Firmware
-        id: generate
-        run: |
-          cd "$OPENWRT_ROOT_PATH"
-          make package/install -j$(($(nproc) + 1)) || make package/install -j1 V=s
-          make target/install -j$(($(nproc) + 1)) || make target/install -j1 V=s
-          make json_overview_image_info
-          make checksum
-          echo "::notice title=Firmware Build Summary::Firmware for ${{ env.DEVICE_NAME }} built successfully. Check bin/targets/${{ env.DEVICE_TARGET }}/${{ env.DEVICE_SUBTARGET }} for images." # <-- ДОБАВЛЕНО: Summary
-
-      - name: Upload Bin To Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ env.SOURCE_REPO }}-${{ env.DEVICE_NAME }}-${{ env.BUILD_DATE }}
-          path: ${{ env.OPENWRT_ROOT_PATH }}/bin
-          retention-days: 7
-
-      - name: Organize Files
-        if: ${{ env.FIRMWARE_RELEASE == 'true' }}
-        run: |
-          cd "$OPENWRT_ROOT_PATH/bin/targets/$DEVICE_TARGET/$DEVICE_SUBTARGET"
-          rm -rf packages feeds.buildinfo profiles.json version.buildinfo
-          df -hT "$PWD"
-
-      - name: Archive Firmware Files
-        if: ${{ env.FIRMWARE_RELEASE == 'true' }}
-        run: |
-          cd "${{ env.OPENWRT_ROOT_PATH }}/bin/targets/${{ env.DEVICE_TARGET }}/${{ env.DEVICE_SUBTARGET }}"
-          zip -r "firmware-${{ env.DEVICE_NAME }}-${{ env.BUILD_DATE }}.zip" ./*
-          mv "firmware-${{ env.DEVICE_NAME }}-${{ env.BUILD_DATE }}.zip" "$GITHUB_WORKSPACE/"
-          df -hT "$PWD"
-          ls -lh "$GITHUB_WORKSPACE/"
-
-      - name: Deploy Files To Release
-        if: ${{ env.FIRMWARE_RELEASE == 'true' }}
-        uses: ncipollo/release-action@v1
-        with:
-          token: ${{ env.TOKEN }}
-          name: "OpenWrt Firmware - ${{ env.SOURCE_BRANCH }} (${{ env.DEVICE_TARGET }}_${{ env.DEVICE_SUBTARGET}})"
-          commit: ${{ env.CURRENT_BRANCH }}
-          tag: firmware-${{ env.SOURCE_BRANCH }}-${{ env.BUILD_DATE }}
-          artifacts: ${{ github.workspace }}/firmware-${{ env.DEVICE_NAME }}-${{ env.BUILD_DATE }}.zip # <-- ИЗМЕНЕНО: Загружаем ZIP-архив
-          replacesArtifacts: true
-          allowUpdates: true
-          prerelease: false
-          body: |
-            ### Build Information
-            ---
-            - Source Code: ${{ env.SOURCE_URL }}
-            - Source Code Branch: ${{ env.SOURCE_BRANCH }}
-            - Device Platform: ${{ env.DEVICE_PLATFORM }}
-            - Device Target: ${{ env.DEVICE_TARGET }}
-            - Device Subtarget: ${{ env.DEVICE_SUBTARGET }}
-            - Device Name: ${{ env.DEVICE_NAME }}
-            - Build Date: ${{ env.BUILD_DATE }}
+          KERNEL_DIR=$(find "$BUILD_DIR_PATH" -maxdepth 1 -type d -name "linux-*" | head
