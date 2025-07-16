@@ -78,7 +78,7 @@ jobs:
     name: Build OpenWrt Toolchain
     runs-on: ubuntu-22.04
     outputs:
-      OPENWRT_ROOT_PATH: ${{ steps.clone_openwrt.outputs.OPENWRT_ROOT_PATH }} # Изменено имя ID
+      OPENWRT_ROOT_PATH: ${{ steps.clone_openwrt.outputs.OPENWRT_ROOT_PATH }}
       SOURCE_OWNER: ${{ steps.env.outputs.SOURCE_OWNER }}
       SOURCE_REPO: ${{ steps.env.outputs.SOURCE_REPO }}
       CURRENT_BRANCH: ${{ steps.env.outputs.CURRENT_BRANCH }}
@@ -311,7 +311,7 @@ jobs:
           echo "DEVICE_TARGET=${{ needs.Toolchain.outputs.DEVICE_TARGET }}" >> "$GITHUB_ENV"
           echo "DEVICE_SUBTARGET=${{ needs.Toolchain.outputs.DEVICE_SUBTARGET }}" >> "$GITHUB_ENV"
           echo "TOOLCHAIN_IMAGE=${{ needs.Toolchain.outputs.TOOLCHAIN_IMAGE }}" >> "$GITHUB_ENV"
-          echo "BUILD_DATE=${{ needs.Toolchain.outputs.BUILD_DATE }}" >> "$GITHUB_ENV"
+          echo "BUILD_DATE=${{ env.BUILD_DATE }}" >> "$GITHUB_ENV" # Use env.BUILD_DATE for consistency
           echo "REBUILD_CHECK=${{ needs.Toolchain.outputs.REBUILD_CHECK }}" >> "$GITHUB_ENV"
 
       - name: Maximize Build Space
@@ -396,7 +396,7 @@ jobs:
       - name: Inject Correct Kernel Vermagic from official source
         if: ${{ env.VERMAGIC == 'true' }}
         run: |
-          # ИСПРАВЛЕНО: Копируем скрипт vermagic_update.sh в OPENWRT_ROOT_PATH
+          # ИСПРАВЛЕНО: Копируем скрипт vermagic_update.sh из вашей директории openwrt/
           cp "${{ github.workspace }}/openwrt/vermagic_update.sh" "$OPENWRT_ROOT_PATH/vermagic_update.sh"
           cd "$OPENWRT_ROOT_PATH"
           chmod +x ./vermagic_update.sh
@@ -462,7 +462,7 @@ jobs:
           # ИСПРАВЛЕНО: Копируем DIY скрипт из вашей директории R281-1/scripts/
           cp "${{ github.workspace }}/R281-1/scripts/$DIY_SH" "$OPENWRT_ROOT_PATH/$DIY_SH"
           
-          # ИСПРАВЛЕНО: Предполагаем, что custom находится в R281-1/custom/
+          # Перемещаем директорию custom из R281-1/custom/ в корень OpenWrt
           if [ -d "${{ github.workspace }}/R281-1/custom" ]; then
             mv "${{ github.workspace }}/R281-1/custom" "$OPENWRT_ROOT_PATH/custom"
           fi
