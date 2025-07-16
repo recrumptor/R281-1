@@ -87,7 +87,7 @@ jobs:
       DEVICE_TARGET: ${{ steps.env.outputs.DEVICE_TARGET }}
       DEVICE_SUBTARGET: ${{ steps.env.outputs.DEVICE_SUBTARGET }}
       TOOLCHAIN_IMAGE: ${{ steps.env.outputs.TOOLCHAIN_IMAGE }}
-      BUILD_DATE: ${{ steps.env.outputs.BUILD_DATE }}
+      BUILD_DATE: ${{ steps.env.outputs.BUILD_DATE }} # <-- ИЗМЕНЕНО: Добавлено в outputs
       REBUILD_CHECK: ${{ steps.hash.outputs.REBUILD_CHECK }}
 
     steps:
@@ -112,15 +112,22 @@ jobs:
 
       - name: Checkout Your Repository (to access R281-1 and openwrt directories)
         uses: actions/checkout@v4
-        with:
-          path: ${{ github.workspace }} # Клонирует ваш репозиторий в корень GITHUB_WORKSPACE
+        # Если имя вашего репозитория - "R281-1", то его содержимое будет прямо в ${{ github.workspace }}/
+        # Не указываем 'path', так как по умолчанию клонируется в текущий рабочий каталог ($GITHUB_WORKSPACE)
+
+      - name: Debug: List contents after checkout
+        run: |
+          echo "--- Contents of ${{ github.workspace }}/ ---"
+          ls -RF "${{ github.workspace }}"
+          echo "--- End of Contents ---"
 
       - name: Install Packages
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
           sudo -E apt-get -qq update
-          sudo -E apt-get -qq install -y $(curl -fsSL https://pastebin.com/raw/y5mk4S1a)
+          # ИЗМЕНЕНО: Добавлено kmod для modinfo
+          sudo -E apt-get -qq install -y kmod $(curl -fsSL https://pastebin.com/raw/y5mk4S1a)
           sudo -E apt-get -qq autoremove --purge
           sudo -E apt-get -qq clean
           df -hT
@@ -158,8 +165,8 @@ jobs:
           if [[ "$CONFIG_LINK" == "true" && -n "$CONFIG_URL" ]]; then
             curl -s "$CONFIG_URL" -o ".config"
           else
-            # ИСПРАВЛЕНО: Копируем config файл из вашей директории R281-1/config/
-            cp "${{ github.workspace }}/R281-1/config/$CONFIG_FILE" ".config"
+            # ИСПРАВЛЕНО: Копируем config файл из вашей директории config/
+            cp "${{ github.workspace }}/config/$CONFIG_FILE" ".config"
           fi
           # Применяем make defconfig, чтобы .config был валидным
           make defconfig
@@ -184,8 +191,8 @@ jobs:
           
           export BUILD_DATE=$(date +"%Y-%m-%d-%H%M")
           echo "BUILD_DATE=$BUILD_DATE" >> "$GITHUB_ENV"
-          echo "BUILD_DATE=$BUILD_DATE" >> "$GITHUB_OUTPUT"
-
+          echo "BUILD_DATE=$BUILD_DATE" >> "$GITHUB_OUTPUT" # <-- ИЗМЕНЕНО: Добавлено в output шага
+          
       - name: Get Release Hash
         continue-on-error: true
         uses: robinraju/release-downloader@v1.12
@@ -250,6 +257,7 @@ jobs:
           cd "$OPENWRT_ROOT_PATH"
           echo "$CURRENT_HASH" > "$GITHUB_WORKSPACE/output/$TOOLCHAIN_IMAGE.hash"
           ls -lh "$GITHUB_WORKSPACE/output"
+          echo "::notice title=Toolchain Build Summary::Toolchain for branch ${{ env.SOURCE_BRANCH }}, target ${{ env.DEVICE_TARGET }}/${{ env.DEVICE_SUBTARGET }} built successfully. Image: ${{ env.TOOLCHAIN_IMAGE }}.img." # <-- ДОБАВЛЕНО: Summary
 
       - name: Upload Toolchain Image To Artifact
         if: ${{ env.TOOLCHAIN_RELEASE != 'true' && steps.hash.outputs.REBUILD_CHECK == 'true' }}
@@ -311,7 +319,7 @@ jobs:
           echo "DEVICE_TARGET=${{ needs.Toolchain.outputs.DEVICE_TARGET }}" >> "$GITHUB_ENV"
           echo "DEVICE_SUBTARGET=${{ needs.Toolchain.outputs.DEVICE_SUBTARGET }}" >> "$GITHUB_ENV"
           echo "TOOLCHAIN_IMAGE=${{ needs.Toolchain.outputs.TOOLCHAIN_IMAGE }}" >> "$GITHUB_ENV"
-          echo "BUILD_DATE=${{ env.BUILD_DATE }}" >> "$GITHUB_ENV" # Use env.BUILD_DATE for consistency
+          echo "BUILD_DATE=${{ needs.Toolchain.outputs.BUILD_DATE }}" >> "$GITHUB_ENV" # <-- ИЗМЕНЕНО: Берем из outputs предыдущего джоба
           echo "REBUILD_CHECK=${{ needs.Toolchain.outputs.REBUILD_CHECK }}" >> "$GITHUB_ENV"
 
       - name: Maximize Build Space
@@ -328,15 +336,21 @@ jobs:
 
       - name: Checkout Your Repository (to access R281-1 and openwrt directories)
         uses: actions/checkout@v4
-        with:
-          path: ${{ github.workspace }} # Клонирует ваш репозиторий в корень GITHUB_WORKSPACE
+        # Если имя вашего репозитория - "R281-1", то его содержимое будет прямо в ${{ github.workspace }}/
+
+      - name: Debug: List contents after checkout (Build Job)
+        run: |
+          echo "--- Contents of ${{ github.workspace }}/ (Build Job) ---"
+          ls -RF "${{ github.workspace }}"
+          echo "--- End of Contents ---"
 
       - name: Install Packages
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
           sudo -E apt-get -qq update
-          sudo -E apt-get -qq install -y $(curl -fsSL https://pastebin.com/raw/y5mk4S1a)
+          # ИЗМЕНЕНО: Добавлено kmod для modinfo
+          sudo -E apt-get -qq install -y kmod $(curl -fsSL https://pastebin.com/raw/y5mk4S1a)
           sudo -E apt-get -qq autoremove --purge
           sudo -E apt-get -qq clean
           df -hT
@@ -373,6 +387,10 @@ jobs:
           # Важно: OPENWRT_ROOT_PATH теперь указывает на смонтированную директорию
           echo "OPENWRT_ROOT_PATH=$(realpath openwrt)" >> "$GITHUB_ENV"
           echo "Toolchain prepared and mounted to $(realpath openwrt)"
+          # ИЗМЕНЕНО: Отмонтируем файловые системы после подготовки
+          sudo umount openwrt
+          sudo umount openwrt-ro
+          rm -rf openwrt-ro overlay workdir # Удаляем временные директории overlay
 
       - name: Update Source Code (inside mounted toolchain)
         run: |
@@ -388,16 +406,16 @@ jobs:
           if [[ "$CONFIG_LINK" == "true" && -n "$CONFIG_URL" ]]; then
             curl -s "$CONFIG_URL" -o ".config"
           else
-            # ИСПРАВЛЕНО: Копируем config файл из вашей директории R281-1/config/
-            cp "${{ github.workspace }}/R281-1/config/$CONFIG_FILE" ".config"
+            # ИСПРАВЛЕНО: Копируем config файл из вашей директории config/
+            cp "${{ github.workspace }}/config/$CONFIG_FILE" ".config"
           fi
           make defconfig
 
       - name: Inject Correct Kernel Vermagic from official source
         if: ${{ env.VERMAGIC == 'true' }}
         run: |
-          # ИСПРАВЛЕНО: Копируем скрипт vermagic_update.sh из вашей директории openwrt/
-          cp "${{ github.workspace }}/openwrt/vermagic_update.sh" "$OPENWRT_ROOT_PATH/vermagic_update.sh"
+          # ИСПРАВЛЕНО: Копируем скрипт vermagic_update.sh из вашего репозитория (корня)
+          cp "${{ github.workspace }}/vermagic_update.sh" "$OPENWRT_ROOT_PATH/vermagic_update.sh"
           cd "$OPENWRT_ROOT_PATH"
           chmod +x ./vermagic_update.sh
           # Параметры: DEVICE_TARGET, DEVICE_SUBTARGET
@@ -408,8 +426,8 @@ jobs:
 
       - name: Load Custom Feeds
         run: |
-          # ИСПРАВЛЕНО: Копируем feeds.sh из вашей директории R281-1/scripts/
-          cp "${{ github.workspace }}/R281-1/scripts/$FEEDS_SH" "$OPENWRT_ROOT_PATH/$FEEDS_SH"
+          # ИСПРАВЛЕНО: Копируем feeds.sh из вашей директории scripts/
+          cp "${{ github.workspace }}/scripts/$FEEDS_SH" "$OPENWRT_ROOT_PATH/$FEEDS_SH"
           cd "$OPENWRT_ROOT_PATH"
           chmod +x "./$FEEDS_SH" && "./$FEEDS_SH"
 
@@ -442,8 +460,8 @@ jobs:
               exit 1
           fi
 
-          # ИСПРАВЛЕНО: Копируем feeds_pkg.sh из вашей директории R281-1/scripts/
-          cp "${{ github.workspace }}/R281-1/scripts/$FEEDS_PKG_SH" "$OPENWRT_ROOT_PATH/$FEEDS_PKG_SH"
+          # ИСПРАВЛЕНО: Копируем feeds_pkg.sh из вашей директории scripts/
+          cp "${{ github.workspace }}/scripts/$FEEDS_PKG_SH" "$OPENWRT_ROOT_PATH/$FEEDS_PKG_SH"
           # Теперь выполняем его из OpenWrt ROOT_PATH
           chmod +x "./$FEEDS_PKG_SH" && "./$FEEDS_PKG_SH"
 
@@ -459,12 +477,12 @@ jobs:
 
       - name: Load DIY
         run: |
-          # ИСПРАВЛЕНО: Копируем DIY скрипт из вашей директории R281-1/scripts/
-          cp "${{ github.workspace }}/R281-1/scripts/$DIY_SH" "$OPENWRT_ROOT_PATH/$DIY_SH"
+          # ИСПРАВЛЕНО: Копируем DIY скрипт из вашей директории scripts/
+          cp "${{ github.workspace }}/scripts/$DIY_SH" "$OPENWRT_ROOT_PATH/$DIY_SH"
           
-          # Перемещаем директорию custom из R281-1/custom/ в корень OpenWrt
-          if [ -d "${{ github.workspace }}/R281-1/custom" ]; then
-            mv "${{ github.workspace }}/R281-1/custom" "$OPENWRT_ROOT_PATH/custom"
+          # Перемещаем директорию custom из корневой директории вашего репозитория в корень OpenWrt
+          if [ -d "${{ github.workspace }}/custom" ]; then
+            mv "${{ github.workspace }}/custom" "$OPENWRT_ROOT_PATH/custom"
           fi
           
           cd "$OPENWRT_ROOT_PATH"
@@ -561,6 +579,7 @@ jobs:
           make target/install -j$(($(nproc) + 1)) || make target/install -j1 V=s
           make json_overview_image_info
           make checksum
+          echo "::notice title=Firmware Build Summary::Firmware for ${{ env.DEVICE_NAME }} built successfully. Check bin/targets/${{ env.DEVICE_TARGET }}/${{ env.DEVICE_SUBTARGET }} for images." # <-- ДОБАВЛЕНО: Summary
 
       - name: Upload Bin To Artifact
         uses: actions/upload-artifact@v4
@@ -576,15 +595,24 @@ jobs:
           rm -rf packages feeds.buildinfo profiles.json version.buildinfo
           df -hT "$PWD"
 
+      - name: Archive Firmware Files
+        if: ${{ env.FIRMWARE_RELEASE == 'true' }}
+        run: |
+          cd "${{ env.OPENWRT_ROOT_PATH }}/bin/targets/${{ env.DEVICE_TARGET }}/${{ env.DEVICE_SUBTARGET }}"
+          zip -r "firmware-${{ env.DEVICE_NAME }}-${{ env.BUILD_DATE }}.zip" ./*
+          mv "firmware-${{ env.DEVICE_NAME }}-${{ env.BUILD_DATE }}.zip" "$GITHUB_WORKSPACE/"
+          df -hT "$PWD"
+          ls -lh "$GITHUB_WORKSPACE/"
+
       - name: Deploy Files To Release
         if: ${{ env.FIRMWARE_RELEASE == 'true' }}
         uses: ncipollo/release-action@v1
         with:
           token: ${{ env.TOKEN }}
-          name: ${{ env.SOURCE_REPO }}_${{ env.SOURCE_BRANCH }}
+          name: "OpenWrt Firmware - ${{ env.SOURCE_BRANCH }} (${{ env.DEVICE_TARGET }}_${{ env.DEVICE_SUBTARGET}})"
           commit: ${{ env.CURRENT_BRANCH }}
-          tag: ${{ env.SOURCE_REPO }}_${{ env.SOURCE_BRANCH }}
-          artifacts: ${{ env.OPENWRT_ROOT_PATH }}/bin/targets/${{ env.DEVICE_TARGET }}/${{ env.DEVICE_SUBTARGET }}/*
+          tag: firmware-${{ env.SOURCE_BRANCH }}-${{ env.BUILD_DATE }}
+          artifacts: ${{ github.workspace }}/firmware-${{ env.DEVICE_NAME }}-${{ env.BUILD_DATE }}.zip # <-- ИЗМЕНЕНО: Загружаем ZIP-архив
           replacesArtifacts: true
           allowUpdates: true
           prerelease: false
