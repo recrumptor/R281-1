@@ -82,7 +82,7 @@ env:
 
 jobs:
   Toolchain:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
 
     outputs:
       OPENWRT_ROOT_PATH: ${{ steps.clone.outputs.OPENWRT_ROOT_PATH }}
