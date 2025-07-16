@@ -497,57 +497,79 @@ jobs:
         run: |
           cd "$OPENWRT_ROOT_PATH"
           
-          # Улучшенный поиск директории скомпилированного ядра
-          KERNEL_DIR=$(find build_dir/target-${{ env.DEVICE_TARGET }}/${{ env.DEVICE_SUBTARGET }} -maxdepth 2 -type d -name "linux-*" | head -n 1)
+          # Мы знаем из предыдущих логов, что корневая директория для скомпилированного таргета - build_dir/target-mipsel_24kc_musl
+          # А внутри нее есть linux-ramips_mt7621. Ищем директорию с именем, начинающимся на "linux-"
+          KERNEL_BASE_PATH="build_dir/target-mipsel_24kc_musl/linux-ramips_mt7621"
+          
+          # Ищем директорию с именем, начинающимся на "linux-" (например, linux-5.15.167)
+          KERNEL_DIR=$(find "$KERNEL_BASE_PATH" -maxdepth 1 -type d -name "linux-*" | head -n 1)
 
           if [ -z "$KERNEL_DIR" ]; then
-            echo "Error: KERNEL_DIR not found after trying multiple paths. Please check the 'build_dir' content manually if possible."
-            echo "Attempted path: build_dir/target-${{ env.DEVICE_TARGET }}/${{ env.DEVICE_SUBTARGET }}/linux-*"
-            ls -R build_dir/
+            echo "Ошибка: KERNEL_DIR не найдена. Ожидаемый путь: '$KERNEL_BASE_PATH/linux-*'."
+            echo "Пожалуйста, проверьте содержимое '$KERNEL_BASE_PATH/' для отладки:"
+            ls -R "$KERNEL_BASE_PATH"/ || true # '|| true' чтобы не падать, если директории нет
             exit 1
           fi
-          echo "Debug: Detected KERNEL_DIR is $KERNEL_DIR"
+          echo "Отладка: Обнаружена директория KERNEL_DIR: $KERNEL_DIR"
           
-          # --- Vermagic из файла .vermagic (PRIMARY) ---
+          # --- Vermagic из файла .vermagic (ОСНОВНОЙ СПОСОБ) ---
+          # Этот файл создается в корне директории скомпилированного ядра
           if [ -f "$KERNEL_DIR/.vermagic" ]; then
-            echo "--- VERMAGIC from .vermagic file (PRIMARY) ---"
+            echo "--- VERMAGIC из файла .vermagic (ОСНОВНОЙ) ---"
             VERMAGIC_FROM_FILE=$(cat "$KERNEL_DIR/.vermagic")
             echo "$VERMAGIC_FROM_FILE"
             echo "::set-output name=build_vermagic::$VERMAGIC_FROM_FILE"
           else
-            echo "Warning: .vermagic file not found in $KERNEL_DIR. Attempting to extract from a kmod."
+            echo "Внимание: Файл .vermagic не найден в $KERNEL_DIR. Попытка извлечь из kmod."
           fi
 
-          # --- Vermagic из скомпилированного модуля (SECONDARY) ---
+          # --- Vermagic из скомпилированного модуля (ДОПОЛНИТЕЛЬНЫЙ СПОСОБ) ---
+          # Этот метод более надежен, так как vermagic зашит непосредственно в .ko файл.
+          # Требует, чтобы kmod-tun был выбран в вашем .config (CONFIG_PACKAGE_kmod-tun=m)
           TUN_IPK_PATH="bin/targets/${{ env.DEVICE_TARGET }}/${{ env.DEVICE_SUBTARGET }}/packages"
           TUN_IPK_FILE=$(find "$TUN_IPK_PATH" -name "kmod-tun_*.ipk" | head -n 1)
 
           if [ -n "$TUN_IPK_FILE" ]; then
-            echo "--- VERMAGIC from kmod-tun.ko (SECONDARY) ---"
+            echo "--- VERMAGIC из kmod-tun.ko (ДОПОЛНИТЕЛЬНЫЙ) ---"
             mkdir -p ./tmp_mod_extract/
             
-            # ИС11РАВЛЕНО: Используем tar для распаковки IPK
+            # Распаковываем IPK файл (который является tar-архивом)
             tar -xf "$TUN_IPK_FILE" -C ./tmp_mod_extract/
             
-            # IPK содержит control.tar.gz и data.tar.gz
-            # Нам нужен data.tar.gz, который содержит .ko файлы
+            # Проверяем наличие data.tar.gz внутри распакованного IPK
+            if [ ! -f ./tmp_mod_extract/data.tar.gz ]; then
+              echo "Ошибка: data.tar.gz не найден после распаковки IPK. Проверьте структуру IPK: $TUN_IPK_FILE"
+              rm -rf ./tmp_mod_extract/ # Очищаем перед выходом
+              exit 1
+            fi
+
+            # Распаковываем data.tar.gz, который содержит .ko файлы
             tar -xzf ./tmp_mod_extract/data.tar.gz -C ./tmp_mod_extract/
             
+            # Ищем файл tun.ko внутри распакованных данных
             TUN_KO=$(find ./tmp_mod_extract/ -name "tun.ko" | head -n 1)
             
             if [ -n "$TUN_KO" ]; then
-                VERMAGIC_STRING=$(strings "$TUN_KO" | grep -oE '^5\.15\.[0-9]+\+[a-f0-9]+(-[0-9]+)?(_mipsel_24kc)?(_musl)?')
-                if [ -z "$VERMAGIC_STRING" ]; then
-                    VERMAGIC_STRING=$(strings "$TUN_KO" | grep -oE '^5\.15\.[0-9]+.*')
+                VERMAGIC_STRING=""
+                # Используем modinfo, если доступен (самый точный способ)
+                if command -v modinfo &> /dev/null; then
+                    VERMAGIC_STRING=$(modinfo "$TUN_KO" | grep ^vermagic | awk '{print $2}')
+                    echo "Vermagic (через modinfo): $VERMAGIC_STRING"
+                else
+                    # Запасной вариант с strings, если modinfo не установлен
+                    VERMAGIC_STRING=$(strings "$TUN_KO" | grep -oE '^5\.15\.[0-9]+[^ ]*' | head -n 1)
+                    echo "Vermagic (через strings): $VERMAGIC_STRING"
                 fi
-                echo "$VERMAGIC_STRING"
-                echo "::set-output name=build_vermagic_from_kmod::$VERMAGIC_STRING"
+                
+                # Сохраняем vermagic в выходные данные GitHub Actions
+                echo "build_vermagic_from_kmod=$VERMAGIC_STRING" >> "$GITHUB_OUTPUT"
             else
-                echo "Warning: tun.ko not found inside extracted IPK."
+                echo "Внимание: tun.ko не найден внутри распакованного IPK."
             fi
-            rm -rf ./tmp_mod_extract/ data.tar.gz control.tar.gz # Очищаем временные файлы
+            # Очищаем временные файлы
+            rm -rf ./tmp_mod_extract/ control.tar.gz data.tar.gz # Добавил data.tar.gz и control.tar.gz в список очистки
           else
-            echo "Warning: kmod-tun IPK not found. Cannot extract vermagic from module. Ensure CONFIG_PACKAGE_kmod-tun=m is in .config."
+            echo "Внимание: IPK kmod-tun не найден. Невозможно извлечь vermagic из модуля. Убедитесь, что CONFIG_PACKAGE_kmod-tun=m находится в .config."
           fi
           
       - name: Generate Firmware
