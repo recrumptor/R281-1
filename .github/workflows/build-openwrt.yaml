@@ -105,16 +105,16 @@ jobs:
           ulimit -n 8192
 
       # - name: Maximize Build Space
-        # uses: easimon/maximize-build-space@master
-        # with:
-          # root-reserve-mb: '4096'
-          # temp-reserve-mb: '2048'
-          # swap-size-mb: '2048'
-          # remove-dotnet: 'true'
-          # remove-android: 'true'
-          # remove-haskell: 'true'
-          # remove-codeql: 'true'
-          # remove-docker-images: 'true'
+      # uses: easimon/maximize-build-space@master
+      # with:
+      # root-reserve-mb: '4096'
+      # temp-reserve-mb: '2048'
+      # swap-size-mb: '2048'
+      # remove-dotnet: 'true'
+      # remove-android: 'true'
+      # remove-haskell: 'true'
+      # remove-codeql: 'true'
+      # remove-docker-images: 'true'
 
       - name: Checkout
         uses: actions/checkout@v4
@@ -139,52 +139,51 @@ jobs:
           git remote add upstream $SOURCE_ORIGIN
           git fetch upstream $SOURCE_BRANCH
           git merge upstream/$SOURCE_BRANCH
-          echo "OPENWRT_ROOT_PATH=$PWD" >> $GITHUB_ENV
-          echo "OPENWRT_ROOT_PATH=$PWD" >> $GITHUB_OUTPUT
-       
-                    
+          echo "OPENWRT_ROOT_PATH=$PWD" >> "$GITHUB_ENV" # Corrected
+          echo "OPENWRT_ROOT_PATH=$PWD" >> "$GITHUB_OUTPUT" # Corrected
+        
       - name: Generate Toolchain Configuration
         run: |
           if [[ "$CONFIG_LINK" == "true" && -n "$CONFIG_URL" ]]; then
-            curl -s $CONFIG_URL -o $OPENWRT_ROOT_PATH/.config
+            curl -s "$CONFIG_URL" -o "$OPENWRT_ROOT_PATH/.config"
           else
-            cp ./config/$CONFIG_FILE $OPENWRT_ROOT_PATH/.config
+            cp "./config/$CONFIG_FILE" "$OPENWRT_ROOT_PATH/.config"
           fi
-          echo -e "\nCONFIG_ALL=y\nCONFIG_ALL_NONSHARED=y" >> $OPENWRT_ROOT_PATH/.config
-          cd $OPENWRT_ROOT_PATH
+          echo -e "\nCONFIG_ALL=y\nCONFIG_ALL_NONSHARED=y" >> "$OPENWRT_ROOT_PATH/.config"
+          cd "$OPENWRT_ROOT_PATH"
           make defconfig
 
       - name: Generate Variables
         id: env
         run: |
-          export SOURCE_OWNER=$(echo $SOURCE_URL | awk -F '/' '{print $(NF-1)}')
-          echo "SOURCE_OWNER=$SOURCE_OWNER" >> $GITHUB_ENV
-          echo "SOURCE_OWNER=$SOURCE_OWNER" >> $GITHUB_OUTPUT
-          export SOURCE_REPO=$(echo $SOURCE_URL | awk -F '/' '{print $NF}' | sed 's/\.git$//')
-          echo "SOURCE_REPO=$SOURCE_REPO" >> $GITHUB_ENV
-          echo "SOURCE_REPO=$SOURCE_REPO" >> $GITHUB_OUTPUT
+          export SOURCE_OWNER=$(echo "$SOURCE_URL" | awk -F '/' '{print $(NF-1)}')
+          echo "SOURCE_OWNER=$SOURCE_OWNER" >> "$GITHUB_ENV" # Corrected
+          echo "SOURCE_OWNER=$SOURCE_OWNER" >> "$GITHUB_OUTPUT" # Corrected
+          export SOURCE_REPO=$(echo "$SOURCE_URL" | awk -F '/' '{print $NF}' | sed 's/\.git$//')
+          echo "SOURCE_REPO=$SOURCE_REPO" >> "$GITHUB_ENV" # Corrected
+          echo "SOURCE_REPO=$SOURCE_REPO" >> "$GITHUB_OUTPUT" # Corrected
           export CURRENT_BRANCH=$(git symbolic-ref --short HEAD)
-          echo "CURRENT_BRANCH=$CURRENT_BRANCH" >> $GITHUB_ENV
-          echo "CURRENT_BRANCH=$CURRENT_BRANCH" >> $GITHUB_OUTPUT
-          cd $OPENWRT_ROOT_PATH
+          echo "CURRENT_BRANCH=$CURRENT_BRANCH" >> "$GITHUB_ENV" # Corrected
+          echo "CURRENT_BRANCH=$CURRENT_BRANCH" >> "$GITHUB_OUTPUT" # Corrected
+          cd "$OPENWRT_ROOT_PATH"
           export DEVICE_NAME=$(grep 'CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/')
-          echo "DEVICE_NAME=$DEVICE_NAME" >> $GITHUB_ENV
-          echo "DEVICE_NAME=$DEVICE_NAME" >> $GITHUB_OUTPUT
+          echo "DEVICE_NAME=$DEVICE_NAME" >> "$GITHUB_ENV" # Corrected
+          echo "DEVICE_NAME=$DEVICE_NAME" >> "$GITHUB_OUTPUT" # Corrected
           export DEVICE_PLATFORM=$(grep 'CONFIG_TARGET_ARCH_PACKAGES' .config | awk -F '"' '{print $2}')
-          echo "DEVICE_PLATFORM=$DEVICE_PLATFORM" >> $GITHUB_ENV
-          echo "DEVICE_PLATFORM=$DEVICE_PLATFORM" >> $GITHUB_OUTPUT
+          echo "DEVICE_PLATFORM=$DEVICE_PLATFORM" >> "$GITHUB_ENV" # Corrected
+          echo "DEVICE_PLATFORM=$DEVICE_PLATFORM" >> "$GITHUB_OUTPUT" # Corrected
           export DEVICE_TARGET=$(grep 'CONFIG_TARGET_BOARD' .config | awk -F '"' '{print $2}')
-          echo "DEVICE_TARGET=$DEVICE_TARGET" >> $GITHUB_ENV
-          echo "DEVICE_TARGET=$DEVICE_TARGET" >> $GITHUB_OUTPUT
+          echo "DEVICE_TARGET=$DEVICE_TARGET" >> "$GITHUB_ENV" # Corrected
+          echo "DEVICE_TARGET=$DEVICE_TARGET" >> "$GITHUB_OUTPUT" # Corrected
           export DEVICE_SUBTARGET=$(grep 'CONFIG_TARGET_SUBTARGET' .config | awk -F '"' '{print $2}')
-          echo "DEVICE_SUBTARGET=$DEVICE_SUBTARGET" >> $GITHUB_ENV
-          echo "DEVICE_SUBTARGET=$DEVICE_SUBTARGET" >> $GITHUB_OUTPUT
+          echo "DEVICE_SUBTARGET=$DEVICE_SUBTARGET" >> "$GITHUB_ENV" # Corrected
+          echo "DEVICE_SUBTARGET=$DEVICE_SUBTARGET" >> "$GITHUB_OUTPUT" # Corrected
           export TOOLCHAIN_IMAGE="toolchain-$SOURCE_OWNER-$SOURCE_REPO-$SOURCE_BRANCH-$DEVICE_TARGET-$DEVICE_SUBTARGET"
-          echo "TOOLCHAIN_IMAGE=$TOOLCHAIN_IMAGE" >> $GITHUB_ENV
-          echo "TOOLCHAIN_IMAGE=$TOOLCHAIN_IMAGE" >> $GITHUB_OUTPUT
+          echo "TOOLCHAIN_IMAGE=$TOOLCHAIN_IMAGE" >> "$GITHUB_ENV" # Corrected
+          echo "TOOLCHAIN_IMAGE=$TOOLCHAIN_IMAGE" >> "$GITHUB_OUTPUT" # Corrected
           export BUILD_DATE=$(date +"%Y-%m-%d-%H%M")
-          echo "BUILD_DATE=$BUILD_DATE" >> $GITHUB_ENV
-          echo "BUILD_DATE=$BUILD_DATE" >> $GITHUB_OUTPUT
+          echo "BUILD_DATE=$BUILD_DATE" >> "$GITHUB_ENV" # Corrected
+          echo "BUILD_DATE=$BUILD_DATE" >> "$GITHUB_OUTPUT" # Corrected
 
       - name: Get Release Hash
         continue-on-error: true
@@ -199,26 +198,26 @@ jobs:
         id: hash
         run: |
           if [ -f "$TOOLCHAIN_IMAGE.hash" ]; then
-            export CACHE_HASH=$(cat $TOOLCHAIN_IMAGE.hash)
+            export CACHE_HASH=$(cat "$TOOLCHAIN_IMAGE.hash")
             echo "Cached hash is $CACHE_HASH"
           else
             echo "No cached hash found"
           fi
-          cd $OPENWRT_ROOT_PATH
+          cd "$OPENWRT_ROOT_PATH"
           export CURRENT_HASH=$(git log --pretty=tformat:"%H" -n1 tools toolchain)
-          echo "CURRENT_HASH=$CURRENT_HASH" >> $GITHUB_ENV
-          echo "CURRENT_HASH=$CURRENT_HASH" >> $GITHUB_OUTPUT
+          echo "CURRENT_HASH=$CURRENT_HASH" >> "$GITHUB_ENV" # Corrected
+          echo "CURRENT_HASH=$CURRENT_HASH" >> "$GITHUB_OUTPUT" # Corrected
           echo "CURRENT_HASH is $CURRENT_HASH"
           if [ -z "$CACHE_HASH" ] || [ "$CURRENT_HASH" != "$CACHE_HASH" ] || [ "${{ env.TOOLCHAIN_REBUILD }}" == "true" ]; then
-            echo "REBUILD_CHECK=true" >> $GITHUB_ENV
-            echo "REBUILD_CHECK=true" >> $GITHUB_OUTPUT
+            echo "REBUILD_CHECK=true" >> "$GITHUB_ENV" # Corrected
+            echo "REBUILD_CHECK=true" >> "$GITHUB_OUTPUT" # Corrected
           fi
 
       - name: Install Feeds
         if: ${{ env.REBUILD_CHECK == 'true' }}
         run: |
           echo "Install Feeds Toolchain"
-          cd $OPENWRT_ROOT_PATH
+          cd "$OPENWRT_ROOT_PATH"
           ./scripts/feeds clean
           ./scripts/feeds update -a
           ./scripts/feeds install -a
@@ -227,24 +226,24 @@ jobs:
         if: ${{ env.REBUILD_CHECK == 'true' }}
         run: |
           if [[ "$CONFIG_LINK" == "true" && -n "$CONFIG_URL" ]]; then
-            curl -s $CONFIG_URL -o $OPENWRT_ROOT_PATH/.config
+            curl -s "$CONFIG_URL" -o "$OPENWRT_ROOT_PATH/.config"
           else
-            cp ./config/$CONFIG_FILE $OPENWRT_ROOT_PATH/.config
+            cp "./config/$CONFIG_FILE" "$OPENWRT_ROOT_PATH/.config"
           fi
-          cd $OPENWRT_ROOT_PATH
+          cd "$OPENWRT_ROOT_PATH"
           make defconfig
 
       - name: Compile Tools
         if: ${{ env.REBUILD_CHECK == 'true' }}
         run: |
-          cd $OPENWRT_ROOT_PATH
+          cd "$OPENWRT_ROOT_PATH"
           echo -e "$(nproc) Thread Compile"
           make tools/compile -j$(($(nproc) + 1)) || make tools/compile -j1 V=s
 
       - name: Compile Toolchain
         if: ${{ env.REBUILD_CHECK == 'true' }}
         run: |
-          cd $OPENWRT_ROOT_PATH
+          cd "$OPENWRT_ROOT_PATH"
           echo -e "$(nproc) Thread Compile"
           make toolchain/compile -j$(($(nproc) + 1)) || make toolchain/compile -j1 V=s
           rm -rf .config* dl bin
@@ -253,13 +252,13 @@ jobs:
         if: ${{ env.REBUILD_CHECK == 'true' }}
         run: |
           cd workspace
-          mksquashfs openwrt $TOOLCHAIN_IMAGE -force-gid 1001 -force-uid 1001 -comp zstd -Xcompression-level 19
-          mkdir -p $GITHUB_WORKSPACE/output
-          split -d -b 1G $TOOLCHAIN_IMAGE $GITHUB_WORKSPACE/output/$TOOLCHAIN_IMAGE.img.
-          rm -f $TOOLCHAIN_IMAGE
-          cd $OPENWRT_ROOT_PATH
-          echo $CURRENT_HASH > $GITHUB_WORKSPACE/output/$TOOLCHAIN_IMAGE.hash
-          ls -lh $GITHUB_WORKSPACE/output
+          mksquashfs openwrt "$TOOLCHAIN_IMAGE" -force-gid 1001 -force-uid 1001 -comp zstd -Xcompression-level 19
+          mkdir -p "$GITHUB_WORKSPACE/output"
+          split -d -b 1G "$TOOLCHAIN_IMAGE" "$GITHUB_WORKSPACE/output/$TOOLCHAIN_IMAGE.img."
+          rm -f "$TOOLCHAIN_IMAGE"
+          cd "$OPENWRT_ROOT_PATH"
+          echo "$CURRENT_HASH" > "$GITHUB_WORKSPACE/output/$TOOLCHAIN_IMAGE.hash"
+          ls -lh "$GITHUB_WORKSPACE/output"
 
       - name: Upload Toolchain Image To Artifact
         if: ${{ env.TOOLCHAIN_RELEASE != 'true' && env.REBUILD_CHECK == 'true' }}
@@ -306,16 +305,16 @@ jobs:
 
       - name: Restore Variables
         run: |
-          echo "OPENWRT_ROOT_PATH=${{ needs.Toolchain.outputs.OPENWRT_ROOT_PATH }}" >> $GITHUB_ENV
-          echo "SOURCE_OWNER=${{ needs.Toolchain.outputs.SOURCE_OWNER }}" >> $GITHUB_ENV
-          echo "SOURCE_REPO=${{ needs.Toolchain.outputs.SOURCE_REPO }}" >> $GITHUB_ENV
-          echo "CURRENT_BRANCH=${{ needs.Toolchain.outputs.CURRENT_BRANCH }}" >> $GITHUB_ENV
-          echo "DEVICE_NAME=${{ needs.Toolchain.outputs.DEVICE_NAME }}" >> $GITHUB_ENV
-          echo "DEVICE_PLATFORM=${{ needs.Toolchain.outputs.DEVICE_PLATFORM }}" >> $GITHUB_ENV
-          echo "DEVICE_TARGET=${{ needs.Toolchain.outputs.DEVICE_TARGET }}" >> $GITHUB_ENV
-          echo "DEVICE_SUBTARGET=${{ needs.Toolchain.outputs.DEVICE_SUBTARGET }}" >> $GITHUB_ENV
-          echo "TOOLCHAIN_IMAGE=${{ needs.Toolchain.outputs.TOOLCHAIN_IMAGE }}" >> $GITHUB_ENV
-          echo "BUILD_DATE=${{ needs.Toolchain.outputs.BUILD_DATE }}" >> $GITHUB_ENV
+          echo "OPENWRT_ROOT_PATH=${{ needs.Toolchain.outputs.OPENWRT_ROOT_PATH }}" >> "$GITHUB_ENV"
+          echo "SOURCE_OWNER=${{ needs.Toolchain.outputs.SOURCE_OWNER }}" >> "$GITHUB_ENV"
+          echo "SOURCE_REPO=${{ needs.Toolchain.outputs.SOURCE_REPO }}" >> "$GITHUB_ENV"
+          echo "CURRENT_BRANCH=${{ needs.Toolchain.outputs.CURRENT_BRANCH }}" >> "$GITHUB_ENV"
+          echo "DEVICE_NAME=${{ needs.Toolchain.outputs.DEVICE_NAME }}" >> "$GITHUB_ENV"
+          echo "DEVICE_PLATFORM=${{ needs.Toolchain.outputs.DEVICE_PLATFORM }}" >> "$GITHUB_ENV"
+          echo "DEVICE_TARGET=${{ needs.Toolchain.outputs.DEVICE_TARGET }}" >> "$GITHUB_ENV"
+          echo "DEVICE_SUBTARGET=${{ needs.Toolchain.outputs.DEVICE_SUBTARGET }}" >> "$GITHUB_ENV"
+          echo "TOOLCHAIN_IMAGE=${{ needs.Toolchain.outputs.TOOLCHAIN_IMAGE }}" >> "$GITHUB_ENV"
+          echo "BUILD_DATE=${{ needs.Toolchain.outputs.BUILD_DATE }}" >> "$GITHUB_ENV"
 
       - name: Maximize Build Space
         uses: easimon/maximize-build-space@master
@@ -364,32 +363,32 @@ jobs:
           cd workspace
           for i in {00..09}; do
             if [ -f "$TOOLCHAIN_IMAGE.img.$i" ]; then
-              cat $TOOLCHAIN_IMAGE.img.$i >> $TOOLCHAIN_IMAGE.img
-              rm -f $TOOLCHAIN_IMAGE.img.$i
+              cat "$TOOLCHAIN_IMAGE.img.$i" >> "$TOOLCHAIN_IMAGE.img"
+              rm -f "$TOOLCHAIN_IMAGE.img.$i"
             fi
           done
           mkdir -p openwrt-ro openwrt workdir overlay
-          sudo mount -o loop $TOOLCHAIN_IMAGE.img openwrt-ro
+          sudo mount -o loop "$TOOLCHAIN_IMAGE.img" openwrt-ro
           sudo mount -t overlay overlay -o lowerdir=openwrt-ro,upperdir=overlay,workdir=workdir openwrt
 
       - name: Update Source Code
         run: |
-          cd $OPENWRT_ROOT_PATH
+          cd "$OPENWRT_ROOT_PATH"
           git config --global user.name "github-actions"
           git config --global user.email "github-actions@github.com"
-          git fetch upstream $SOURCE_BRANCH
-          git merge upstream/$SOURCE_BRANCH
+          git fetch upstream "$SOURCE_BRANCH"
+          git merge upstream/"$SOURCE_BRANCH"
 
       - name: Load Custom Feeds
         run: |
-          cp ./scripts/$FEEDS_SH $OPENWRT_ROOT_PATH/$FEEDS_SH
-          cd $OPENWRT_ROOT_PATH
-          chmod +x ./$FEEDS_SH && ./$FEEDS_SH
+          cp "./scripts/$FEEDS_SH" "$OPENWRT_ROOT_PATH/$FEEDS_SH"
+          cd "$OPENWRT_ROOT_PATH"
+          chmod +x "./$FEEDS_SH" && "./$FEEDS_SH"
 
       - name: Install Feeds
         run: |
           # Переходим в корневую директорию OpenWrt
-          cd $OPENWRT_ROOT_PATH
+          cd "$OPENWRT_ROOT_PATH"
           
           # Очищаем фиды перед обновлением, чтобы избежать старых проблем
           ./scripts/feeds clean
@@ -402,7 +401,7 @@ jobs:
           # Цикл повторных попыток для feeds update -a
           MAX_RETRIES=5 # Максимальное количество попыток
           RETRY_COUNT=0 # Счетчик текущих попыток
-          while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+          while [ "$RETRY_COUNT" -lt "$MAX_RETRIES" ]; do
               echo "--- Попытка обновления фидов $((RETRY_COUNT + 1)) из $MAX_RETRIES ---"
               # Используем V=s для подробного лога, чтобы видеть, что происходит
               if ./scripts/feeds update -a V=s; then
@@ -416,14 +415,14 @@ jobs:
           done
 
           # Если все попытки неудачны, завершаем процесс с ошибкой
-          if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
+          if [ "$RETRY_COUNT" -eq "$MAX_RETRIES" ]; then
               echo "feeds update -a не удалось после $MAX_RETRIES попыток. Прерываю сборку."
               exit 1
           fi
 
           # Теперь запускаем скрипт для удаления пакетов (если он необходим)
           # Убедитесь, что FEEDS_PKG_SH определен
-          chmod +x ./scripts/$FEEDS_PKG_SH && ./scripts/$FEEDS_PKG_SH
+          chmod +x "./scripts/$FEEDS_PKG_SH" && "./scripts/$FEEDS_PKG_SH"
 
           # Устанавливаем все пакеты из фидов
           ./scripts/feeds install -a V=s
@@ -435,20 +434,20 @@ jobs:
             | grep -m1 -oE "\"name\":\s*\"v${snapshot_version}\.[^\"]+\"" \
             | cut -d'"' -f4 | sed 's/^v//')
           if [[ "$CONFIG_LINK" == "true" && -n "$CONFIG_URL" ]]; then
-            curl -s $CONFIG_URL -o $OPENWRT_ROOT_PATH/.config
+            curl -s "$CONFIG_URL" -o "$OPENWRT_ROOT_PATH/.config"
           else
-            cp ./config/$CONFIG_FILE $OPENWRT_ROOT_PATH/.config
+            cp "./config/$CONFIG_FILE" "$OPENWRT_ROOT_PATH/.config"
           fi
           if [[ "$VERMAGIC_OPT" == "true" ]]; then
             version="${snapshot_version}-SNAPSHOT"
           else
             version="${release_version}"
           fi
-          kmods=$(curl -s https://downloads.openwrt.org/releases/${version}/targets/${DEVICE_TARGET}/${DEVICE_SUBTARGET}/kmods/ \
+          kmods=$(curl -s "https://downloads.openwrt.org/releases/${version}/targets/${DEVICE_TARGET}/${DEVICE_SUBTARGET}/kmods/" \
               | grep -oP '<td class="n"><a href="\K[^/]+|<td class="d">\K[^<]+' \
               | paste -d '|' - - | sort -t '|' -k2 | head -n1 | cut -d '|' -f1)
-          echo "src/gz openwrt_kmods https://downloads.openwrt.org/releases/${version}/targets/${DEVICE_TARGET}/${DEVICE_SUBTARGET}/kmods/${kmods}" >> ./custom/files/etc/opkg/customfeeds.conf
-          cd $OPENWRT_ROOT_PATH
+          echo "src/gz openwrt_kmods https://downloads.openwrt.org/releases/${version}/targets/${DEVICE_TARGET}/${DEVICE_SUBTARGET}/kmods/${kmods}" >> "./custom/files/etc/opkg/customfeeds.conf"
+          cd "$OPENWRT_ROOT_PATH"
           grep -q '^CONFIG_VERSION_REPO=' ./.config \
             && sed -i "s|^CONFIG_VERSION_REPO=.*|CONFIG_VERSION_REPO=\"https://downloads.openwrt.org/releases/${version}\"|" ./.config \
             || echo -e "\nCONFIG_VERSION_REPO=\"https://downloads.openwrt.org/releases/${version}\"" >> ./.config
@@ -468,22 +467,22 @@ jobs:
 
       - name: Load DIY
         run: |
-          cp ./scripts/$DIY_SH $OPENWRT_ROOT_PATH/
-          mv ./custom $OPENWRT_ROOT_PATH/
-          cd $OPENWRT_ROOT_PATH
-          chmod +x ./$DIY_SH && ./$DIY_SH
+          cp "./scripts/$DIY_SH" "$OPENWRT_ROOT_PATH/"
+          mv ./custom "$OPENWRT_ROOT_PATH/"
+          cd "$OPENWRT_ROOT_PATH"
+          chmod +x "./$DIY_SH" && "./$DIY_SH"
 
       - name: Download Packages
         id: download
         run: |
-          cd $OPENWRT_ROOT_PATH
+          cd "$OPENWRT_ROOT_PATH"
           make download -j10 || make download -j10 V=s
           find dl -size -1024c -exec ls -l {} \;
           find dl -size -1024c -exec rm -f {} \;
 
       - name: Compile Packages
         run: |
-          cd $OPENWRT_ROOT_PATH
+          cd "$OPENWRT_ROOT_PATH"
           echo -e "$(nproc) Thread Compile"
           make clean
           make buildinfo
@@ -518,9 +517,10 @@ jobs:
             echo "--- VERMAGIC из файла .vermagic (ОСНОВНОЙ) ---"
             VERMAGIC_FROM_FILE=$(cat "$KERNEL_DIR/.vermagic")
             echo "$VERMAGIC_FROM_FILE"
-            echo "::set-output name=build_vermagic::$VERMAGIC_FROM_FILE"
+            # ИСПРАВЛЕНО: Использование нового синтаксиса GITHUB_OUTPUT
+            echo "build_vermagic=$VERMAGIC_FROM_FILE" >> "$GITHUB_OUTPUT"
           else
-            echo "Внимание: Файл .vermagic не найден в $KERNEL_DIR. Попытка извлечь из kmod."
+            echo "Внимание: Файл .vermagic не найден в "$KERNEL_DIR". Попытка извлечь из kmod."
           fi
 
           # --- Vermagic из скомпилированного модуля (ДОПОЛНИТЕЛЬНЫЙ СПОСОБ) ---
@@ -561,7 +561,7 @@ jobs:
                     echo "Vermagic (через strings): $VERMAGIC_STRING"
                 fi
                 
-                # Сохраняем vermagic в выходные данные GitHub Actions
+                # ИСПРАВЛЕНО: Использование нового синтаксиса GITHUB_OUTPUT
                 echo "build_vermagic_from_kmod=$VERMAGIC_STRING" >> "$GITHUB_OUTPUT"
             else
                 echo "Внимание: tun.ko не найден внутри распакованного IPK."
@@ -575,7 +575,7 @@ jobs:
       - name: Generate Firmware
         id: generate
         run: |
-          cd $OPENWRT_ROOT_PATH
+          cd "$OPENWRT_ROOT_PATH"
           make package/install -j$(($(nproc) + 1)) || make package/install -j1 V=s
           make target/install -j$(($(nproc) + 1)) || make target/install -j1 V=s
           make json_overview_image_info
@@ -591,9 +591,9 @@ jobs:
       - name: Organize Files
         if: ${{ env.FIRMWARE_RELEASE == 'true' }}
         run: |
-          cd $OPENWRT_ROOT_PATH/bin/targets/$DEVICE_TARGET/$DEVICE_SUBTARGET
+          cd "$OPENWRT_ROOT_PATH/bin/targets/$DEVICE_TARGET/$DEVICE_SUBTARGET"
           rm -rf packages feeds.buildinfo profiles.json version.buildinfo
-          df -hT $PWD
+          df -hT "$PWD"
 
       - name: Deploy Files To Release
         if: ${{ env.FIRMWARE_RELEASE == 'true' }}
