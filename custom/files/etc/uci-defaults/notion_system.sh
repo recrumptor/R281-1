@@ -11,12 +11,11 @@ uci -q batch <<-EOF >/dev/null
 
   # Configure NTP servers
   del system.ntp.server
-  add_list system.ntp.server='africa.pool.ntp.org'
-  add_list system.ntp.server='asia.pool.ntp.org'
-  add_list system.ntp.server='europe.pool.ntp.org'
-  add_list system.ntp.server='north-america.pool.ntp.org'
-  add_list system.ntp.server='oceania.pool.ntp.org'
-  add_list system.ntp.server='south-america.pool.ntp.org'
+  add_list system.ntp.server='ru.pool.ntp.org'      # Российский NTP-пул
+  add_list system.ntp.server='0.pool.ntp.org'       # Глобальные NTP-пулы
+  add_list system.ntp.server='1.pool.ntp.org'
+  add_list system.ntp.server='2.pool.ntp.org'
+  add_list system.ntp.server='3.pool.ntp.org'
 
   # Luci language
   set luci.main.lang="auto"
