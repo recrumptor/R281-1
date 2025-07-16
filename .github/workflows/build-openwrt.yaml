@@ -115,7 +115,7 @@ jobs:
         # Если имя вашего репозитория - "R281-1", то его содержимое будет прямо в ${{ github.workspace }}/
         # Не указываем 'path' так как по умолчанию клонируется в текущий рабочий каталог ($GITHUB_WORKSPACE)
 
-      - name: "Debug: List contents after checkout" # <-- ИСПРАВЛЕНО ЗДЕСЬ!
+      - name: "Debug: List contents after checkout"
         run: |
           echo "--- Contents of ${{ github.workspace }}/ ---"
           ls -RF "${{ github.workspace }}"
@@ -277,7 +277,7 @@ jobs:
         with:
           token: ${{ env.TOKEN }}
           name: "OpenWrt Toolchain - ${{ env.SOURCE_BRANCH }} (${{ env.DEVICE_TARGET }}_${{ env.DEVICE_SUBTARGET}})"
-          commit: ${{ env.CURRENT_BRANCH }}
+          commit: ${{ env.CURRENT_BRANCH }} # <--- ГАРАНТИРОВАНО ПРАВИЛЬНАЯ СТРОКА 595!
           tag: toolchain
           artifacts: output/*
           replacesArtifacts: true
@@ -525,7 +525,7 @@ jobs:
             tar -xf "$TUN_IPK_FILE" -C ./tmp_mod_extract/
             
             if [ ! -f ./tmp_mod_extract/data.tar.gz ]; then
-              echo "Ошибка: data.tar.gz не найден после распаковки IPK. Проверьте структуру IPK: "$TUN_IPK_FILE""
+              echo "Ошибка: data.tar.gz не найден после распаковки IPK. Проверьте структуру IPK: $TUN_IPK_FILE"
               rm -rf ./tmp_mod_extract/
               exit 1
             fi
@@ -592,4 +592,19 @@ jobs:
         with:
           token: ${{ env.TOKEN }}
           name: "OpenWrt Firmware - ${{ env.SOURCE_BRANCH }} (${{ env.DEVICE_TARGET }}_${{ env.DEVICE_SUBTARGET}})"
-          commit: ${{ env
+          commit: ${{ env.CURRENT_BRANCH }}
+          tag: firmware-${{ env.SOURCE_BRANCH }}-${{ env.BUILD_DATE }}
+          artifacts: ${{ github.workspace }}/firmware-${{ env.DEVICE_NAME }}-${{ env.BUILD_DATE }}.zip
+          replacesArtifacts: true
+          allowUpdates: true
+          prerelease: false
+          body: |
+            ### Build Information
+            ---
+            - Source Code: ${{ env.SOURCE_URL }}
+            - Source Code Branch: ${{ env.SOURCE_BRANCH }}
+            - Device Platform: ${{ env.DEVICE_PLATFORM }}
+            - Device Target: ${{ env.DEVICE_TARGET }}
+            - Device Subtarget: ${{ env.DEVICE_SUBTARGET }}
+            - Device Name: ${{ env.DEVICE_NAME }}
+            - Build Date: ${{ env.BUILD_DATE }}
