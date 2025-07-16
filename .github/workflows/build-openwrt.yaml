@@ -277,7 +277,7 @@ jobs:
         with:
           token: ${{ env.TOKEN }}
           name: "OpenWrt Toolchain - ${{ env.SOURCE_BRANCH }} (${{ env.DEVICE_TARGET }}_${{ env.DEVICE_SUBTARGET}})"
-          commit: ${{ env.CURRENT_BRANCH }} # <--- ГАРАНТИРОВАНО ПРАВИЛЬНАЯ СТРОКА 595!
+          commit: ${{ env.CURRENT_BRANCH }}
           tag: toolchain
           artifacts: output/*
           replacesArtifacts: true
@@ -364,7 +364,7 @@ jobs:
           tag: toolchain
           out-file-path: workspace
 
-      - name: Prepare Toolchain Image
+      - name: Prepare Toolchain Image for Build # ИЗМЕНЕНО НАЗВАНИЕ
         run: |
           cd workspace
           for i in {00..09}; do
@@ -373,20 +373,35 @@ jobs:
               rm -f "$TOOLCHAIN_IMAGE.img.$i"
             fi
           done
-          mkdir -p openwrt-ro openwrt workdir overlay
+          mkdir -p openwrt-ro # Директория только для чтения для монтирования образа
+          mkdir -p openwrt_mount_point # Точка монтирования для образа
+          mkdir -p openwrt_build_source # Новая директория для исходников, куда будем копировать из монтированной
+          
+          # Монтируем образ в openwrt_mount_point
           sudo mount -o loop "$TOOLCHAIN_IMAGE.img" openwrt-ro
-          sudo mount -t overlay overlay -o lowerdir=openwrt-ro,upperdir=overlay,workdir=workdir openwrt
-          echo "OPENWRT_ROOT_PATH=$(realpath openwrt)" >> "$GITHUB_ENV"
-          echo "Toolchain prepared and mounted to $(realpath openwrt)"
-          sudo umount openwrt
+          sudo mount -t overlay overlay -o lowerdir=openwrt-ro,upperdir=overlay_upper,workdir=overlay_work openwrt_mount_point
+          
+          # Копируем содержимое смонтированного образа в новую директорию для сборки
+          cp -a openwrt_mount_point/. openwrt_build_source/
+          
+          # Размонтируем все, что связано с образом
+          sudo umount openwrt_mount_point
           sudo umount openwrt-ro
-          rm -rf openwrt-ro overlay workdir
-
-      - name: Update Source Code (inside mounted toolchain)
+          rm -rf openwrt-ro overlay_upper overlay_work # Удаляем временные каталоги для оверлея
+          
+          # Теперь OPENWRT_ROOT_PATH указывает на новую директорию, в которой будем работать
+          echo "OPENWRT_ROOT_PATH=$(realpath openwrt_build_source)" >> "$GITHUB_ENV"
+          echo "Toolchain prepared and copied to $(realpath openwrt_build_source)"
+          
+      - name: Update Source Code (in new directory) # ИЗМЕНЕНО НАЗВАНИЕ
         run: |
           cd "$OPENWRT_ROOT_PATH"
           git config --global user.name "github-actions"
           git config --global user.email "github-actions@github.com"
+          git remote add origin "$SOURCE_URL" || true # Добавляем origin, если еще нет
+          git remote add upstream "$SOURCE_ORIGIN" || true # Добавляем upstream, если еще нет
+          git fetch origin "$SOURCE_BRANCH"
+          git merge origin/"$SOURCE_BRANCH"
           git fetch upstream "$SOURCE_BRANCH"
           git merge upstream/"$SOURCE_BRANCH"
 
