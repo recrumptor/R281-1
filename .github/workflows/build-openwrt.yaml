@@ -337,7 +337,7 @@ jobs:
           ls -RF "${{ github.workspace }}"
           echo "--- End of Contents ---"
 
-      - name: Install Packages
+      - name: Install Packages # ИЗМЕНЕНО: добавлена строка для modprobe overlay
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
@@ -345,6 +345,7 @@ jobs:
           sudo -E apt-get -qq install -y kmod $(curl -fsSL https://pastebin.com/raw/y5mk4S1a)
           sudo -E apt-get -qq autoremove --purge
           sudo -E apt-get -qq clean
+          sudo modprobe overlay # <--- ДОБАВЛЕНА ЭТА СТРОКА
           df -hT
 
       - name: Download Toolchain Image From Artifact
@@ -364,7 +365,7 @@ jobs:
           tag: toolchain
           out-file-path: workspace
 
-      - name: Prepare Toolchain Image for Build # ИЗМЕНЕНО НАЗВАНИЕ
+      - name: Prepare Toolchain Image for Build
         run: |
           cd workspace
           for i in {00..09}; do
@@ -393,7 +394,7 @@ jobs:
           echo "OPENWRT_ROOT_PATH=$(realpath openwrt_build_source)" >> "$GITHUB_ENV"
           echo "Toolchain prepared and copied to $(realpath openwrt_build_source)"
           
-      - name: Update Source Code (in new directory) # ИЗМЕНЕНО НАЗВАНИЕ
+      - name: Update Source Code (in new directory)
         run: |
           cd "$OPENWRT_ROOT_PATH"
           git config --global user.name "github-actions"
