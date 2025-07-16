@@ -498,12 +498,13 @@ jobs:
           cd "$OPENWRT_ROOT_PATH"
           
           # Улучшенный поиск директории скомпилированного ядра
-          # Ищем "linux-" внутри build_dir/target-ARCH/SUBARCH/
-          KERNEL_DIR=$(find build_dir/target-${{ env.DEVICE_TARGET }}/${{ env.DEVICE_SUBTARGET }} -maxdepth 2 -type d -name "linux-*" | head -n 1)
+          # Используем find для более надежного поиска, так как точный путь может меняться
+          # Теперь используем ТОЧНЫЙ ПУТЬ target-mipsel_24kc_musl
+          KERNEL_DIR=$(find build_dir/target-mipsel_24kc_musl -maxdepth 2 -type d -name "linux-*" | head -n 1)
 
           if [ -z "$KERNEL_DIR" ]; then
             echo "Error: KERNEL_DIR not found after trying multiple paths. Please check the 'build_dir' content manually if possible."
-            echo "Attempted path: build_dir/target-${{ env.DEVICE_TARGET }}/${{ env.DEVICE_SUBTARGET }}/linux-*"
+            echo "Attempted path: build_dir/target-mipsel_24kc_musl/linux-*"
             ls -R build_dir/
             exit 1
           fi
