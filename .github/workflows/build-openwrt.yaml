@@ -69,7 +69,7 @@ env:
   FIRMWARE_RELEASE: ${{ github.event.inputs.firmware_release }}
   TOOLCHAIN_RELEASE: ${{ github.event.inputs.toolchain_release }}
   TOOLCHAIN_REBUILD: ${{ github.event.inputs.toolchain_rebuild }}
-  VERMAGIC: ${{ env.VERMAGIC }} # <-- Используем env.VERMAGIC, так как input уже преобразован
+  VERMAGIC: ${{ github.event.inputs.vermagic }} # <-- ИСПРАВЛЕНО ЗДЕСЬ!
   TOKEN: ${{ secrets.GITHUB_TOKEN }}
   TZ: UTC
 
@@ -409,7 +409,7 @@ jobs:
           ./vermagic_update.sh ${{ env.DEVICE_TARGET }} ${{ env.DEVICE_SUBTARGET }}
         env:
           # Можно указать явно URL снапшотов OpenWrt, если нужно отличное от downloads.openwrt.org
-          REPO_URL: https://downloads.openwrt.org/snapshots/ # <-- ИСПРАВЛЕНО ЗДЕСЬ!
+          REPO_URL: https://downloads.openwrt.org/snapshots/ 
 
       - name: Load Custom Feeds
         run: |
@@ -496,4 +496,115 @@ jobs:
           
           BUILD_DIR_PATH="build_dir/target-${{ env.DEVICE_PLATFORM }}/linux-${{ env.DEVICE_TARGET }}_${{ env.DEVICE_SUBTARGET }}"
           
-          KERNEL_DIR=$(find "$BUILD_DIR_PATH" -maxdepth 1 -type d -name "linux-*" | head
+          KERNEL_DIR=$(find "$BUILD_DIR_PATH" -maxdepth 1 -type d -name "linux-*" | head -n 1)
+
+          if [ -z "$KERNEL_DIR" ]; then
+            echo "Ошибка: KERNEL_DIR не найдена. Ожидаемый путь: '$BUILD_DIR_PATH/linux-*'."
+            echo "Пожалуйста, проверьте содержимое '$BUILD_DIR_PATH/' для отладки:"
+            ls -R "$BUILD_DIR_PATH"/ || true
+            exit 1
+          fi
+          echo "Отладка: Обнаружена директория KERNEL_DIR: $KERNEL_DIR"
+          
+          if [ -f "$KERNEL_DIR/.vermagic" ]; then
+            echo "--- VERMAGIC из файла .vermagic (ОСНОВНОЙ) ---"
+            VERMAGIC_FROM_FILE=$(cat "$KERNEL_DIR/.vermagic")
+            echo "$VERMAGIC_FROM_FILE"
+            echo "build_vermagic=$VERMAGIC_FROM_FILE" >> "$GITHUB_OUTPUT"
+          else
+            echo "Внимание: Файл .vermagic не найден в "$KERNEL_DIR". Попытка извлечь из kmod."
+          fi
+
+          TUN_IPK_PATH="bin/targets/${{ env.DEVICE_TARGET }}/${{ env.DEVICE_SUBTARGET }}/packages"
+          TUN_IPK_FILE=$(find "$TUN_IPK_PATH" -name "kmod-tun_*.ipk" | head -n 1)
+
+          if [ -n "$TUN_IPK_FILE" ]; then
+            echo "--- VERMAGIC из kmod-tun.ko (ДОПОЛНИТЕЛЬНЫЙ) ---"
+            mkdir -p ./tmp_mod_extract/
+            
+            tar -xf "$TUN_IPK_FILE" -C ./tmp_mod_extract/
+            
+            if [ ! -f ./tmp_mod_extract/data.tar.gz ]; then
+              echo "Ошибка: data.tar.gz не найден после распаковки IPK. Проверьте структуру IPK: $TUN_IPK_FILE"
+              rm -rf ./tmp_mod_extract/
+              exit 1
+            fi
+
+            tar -xzf ./tmp_mod_extract/data.tar.gz -C ./tmp_mod_extract/
+            
+            TUN_KO=$(find ./tmp_mod_extract/ -name "tun.ko" | head -n 1)
+            
+            if [ -n "$TUN_KO" ]; then
+                VERMAGIC_STRING=""
+                if command -v modinfo &> /dev/null; then
+                    VERMAGIC_STRING=$(modinfo "$TUN_KO" | grep ^vermagic | awk '{print $2}')
+                    echo "Vermagic (через modinfo): $VERMAGIC_STRING"
+                else
+                    VERMAGIC_STRING=$(strings "$TUN_KO" | grep -oE '^5\.15\.[0-9]+[^ ]*' | head -n 1)
+                    echo "Vermagic (через strings): $VERMAGIC_STRING"
+                fi
+                
+                echo "build_vermagic_from_kmod=$VERMAGIC_STRING" >> "$GITHUB_OUTPUT"
+            else
+                echo "Внимание: tun.ko не найден внутри распакованного IPK."
+            fi
+            rm -rf ./tmp_mod_extract/ control.tar.gz data.tar.gz
+          else
+            echo "Внимание: IPK kmod-tun не найден. Невозможно извлечь vermagic из модуля. Убедитесь, что CONFIG_PACKAGE_kmod-tun=m находится в .config."
+          fi
+          
+      - name: Generate Firmware
+        id: generate
+        run: |
+          cd "$OPENWRT_ROOT_PATH"
+          make package/install -j$(($(nproc) + 1)) || make package/install -j1 V=s
+          make target/install -j$(($(nproc) + 1)) || make target/install -j1 V=s
+          make json_overview_image_info
+          make checksum
+          echo "::notice title=Firmware Build Summary::Firmware for ${{ env.DEVICE_NAME }} built successfully. Check bin/targets/${{ env.DEVICE_TARGET }}/${{ env.DEVICE_SUBTARGET }} for images."
+
+      - name: Upload Bin To Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.SOURCE_REPO }}-${{ env.DEVICE_NAME }}-${{ env.BUILD_DATE }}
+          path: ${{ env.OPENWRT_ROOT_PATH }}/bin
+          retention-days: 7
+
+      - name: Organize Files
+        if: ${{ env.FIRMWARE_RELEASE == 'true' }}
+        run: |
+          cd "$OPENWRT_ROOT_PATH/bin/targets/$DEVICE_TARGET/$DEVICE_SUBTARGET"
+          rm -rf packages feeds.buildinfo profiles.json version.buildinfo
+          df -hT "$PWD"
+
+      - name: Archive Firmware Files
+        if: ${{ env.FIRMWARE_RELEASE == 'true' }}
+        run: |
+          cd "${{ env.OPENWRT_ROOT_PATH }}/bin/targets/${{ env.DEVICE_TARGET }}/${{ env.DEVICE_SUBTARGET }}"
+          zip -r "firmware-${{ env.DEVICE_NAME }}-${{ env.BUILD_DATE }}.zip" ./*
+          mv "firmware-${{ env.DEVICE_NAME }}-${{ env.BUILD_DATE }}.zip" "$GITHUB_WORKSPACE/"
+          df -hT "$PWD"
+          ls -lh "$GITHUB_WORKSPACE/"
+
+      - name: Deploy Files To Release
+        if: ${{ env.FIRMWARE_RELEASE == 'true' }}
+        uses: ncipollo/release-action@v1
+        with:
+          token: ${{ env.TOKEN }}
+          name: "OpenWrt Firmware - ${{ env.SOURCE_BRANCH }} (${{ env.DEVICE_TARGET }}_${{ env.DEVICE_SUBTARGET}})"
+          commit: ${{ env.CURRENT_BRANCH }}
+          tag: firmware-${{ env.SOURCE_BRANCH }}-${{ env.BUILD_DATE }}
+          artifacts: ${{ github.workspace }}/firmware-${{ env.DEVICE_NAME }}-${{ env.BUILD_DATE }}.zip
+          replacesArtifacts: true
+          allowUpdates: true
+          prerelease: false
+          body: |
+            ### Build Information
+            ---
+            - Source Code: ${{ env.SOURCE_URL }}
+            - Source Code Branch: ${{ env.SOURCE_BRANCH }}
+            - Device Platform: ${{ env.DEVICE_PLATFORM }}
+            - Device Target: ${{ env.DEVICE_TARGET }}
+            - Device Subtarget: ${{ env.DEVICE_SUBTARGET }}
+            - Device Name: ${{ env.DEVICE_NAME }}
+            - Build Date: ${{ env.BUILD_DATE }}
