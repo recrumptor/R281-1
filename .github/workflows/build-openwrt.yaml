@@ -212,19 +212,33 @@ jobs:
         if: ${{ env.REBUILD_CHECK == 'true' }}
         run: |
           echo "Install Feeds Toolchain"
-          cd $OPENWRT_ROOT_PATH
+          cd "$OPENWRT_ROOT_PATH"
           ./scripts/feeds clean
-          ./scripts/feeds update -a
+          RETRIES=3
+          for i in $(seq 1 $RETRIES); do
+            ./scripts/feeds update -a && break || {
+              echo "Feeds update failed, retrying ($i/$RETRIES)..."
+              sleep 5
+            }
+          done
           ./scripts/feeds install -a
+
       - name: Load Custom Configuration
         if: ${{ env.REBUILD_CHECK == 'true' }}
         run: |
           if [[ "$CONFIG_LINK" == "true" && -n "$CONFIG_URL" ]]; then
-            curl -s $CONFIG_URL -o $OPENWRT_ROOT_PATH/.config
+            echo "Downloading config from $CONFIG_URL"
+            RETRIES=3
+            for i in $(seq 1 $RETRIES); do
+              curl -fsSL "$CONFIG_URL" -o "$OPENWRT_ROOT_PATH/.config" && break || {
+                echo "Download failed, retrying ($i/$RETRIES)..."
+                sleep 5
+              }
+            done
           else
-            cp ./config/$CONFIG_FILE $OPENWRT_ROOT_PATH/.config
+            cp "./config/$CONFIG_FILE" "$OPENWRT_ROOT_PATH/.config"
           fi
-          cd $OPENWRT_ROOT_PATH
+          cd "$OPENWRT_ROOT_PATH"
           make defconfig
       - name: Compile Tools
         if: ${{ env.REBUILD_CHECK == 'true' }}
