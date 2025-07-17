@@ -43,48 +43,40 @@ on:
         description: "Firmware Release"
         type: boolean
         default: false
-      # toolchain_release, toolchain_rebuild, vermagic больше не нужны,
-      # так как toolchain не кэшируется и vermagic обновляется всегда
-      # toolchain_release:
-      #   description: "Toolchain Release"
-      #   type: boolean
-      #   default: true
-      # toolchain_rebuild:
-      #   description: "Force Rebuild Toolchain"
-      #   type: boolean
-      #   default: false
       vermagic:
         description: "Inject official kernel vermagic for kmod compatibility"
         type: boolean
-        default: true # Vermagic всегда будем использовать, так как toolchain не кэшируется
+        default: true
 
 env:
-  SOURCE_URL: https://github.com/recrumptor/openwrt # URL репозитория OpenWrt для клонирования
+  # Настройки репозитория OpenWrt для клонирования
+  SOURCE_URL: https://github.com/recrumptor/openwrt 
   SOURCE_ORIGIN: https://github.com/recrumptor/openwrt # Для слияния upstream изменений
   SOURCE_BRANCH: ${{ github.event.inputs.branch }}
-  FEEDS_SH: feeds.sh
-  FEEDS_PKG_SH: feeds_pkg.sh
+
+  # Настройки ваших скриптов и конфигов (пути относительно корня вашего репозитория)
+  FEEDS_SH_PATH: scripts/feeds.sh
+  FEEDS_PKG_SH_PATH: scripts/feeds_pkg.sh
+  DIY_SH_PATH: scripts/${{ github.event.inputs.diy }} # Путь к diy_v1.sh или diy_v2.sh
+  CONFIG_DIR_PATH: config/ # Директория для .config файлов
+  CUSTOM_DIR_PATH: custom/ # Директория для custom/ файлов, если есть
+
+  # Переменные из ввода воркфлоу
   CONFIG_FILE: ${{ github.event.inputs.config_file }}
   CONFIG_LINK: ${{ github.event.inputs.config_link }}
   CONFIG_URL: ${{ github.event.inputs.config_url }}
-  DIY_SH: ${{ github.event.inputs.diy }}
   FIRMWARE_RELEASE: ${{ github.event.inputs.firmware_release }}
-  # TOOLCHAIN_RELEASE: ${{ github.event.inputs.toolchain_release }} # Удалено
-  # TOOLCHAIN_REBUILD: ${{ github.event.inputs.toolchain_rebuild }} # Удалено
   VERMAGIC: ${{ github.event.inputs.vermagic }}
+
+  # Общие переменные окружения
   TOKEN: ${{ secrets.GITHUB_TOKEN }}
   TZ: UTC
-  BUILD_ROOT_DIR: openwrt_source # Новая директория для клонирования OpenWrt
+  BUILD_ROOT_DIR: openwrt_source # Директория, куда будет клонирован OpenWrt
 
 jobs:
-  # Джоба Toolchain удалена полностью
-  # Toolchain:
-  #   ... (удалено)
-
   Build:
     name: Build OpenWrt Firmware
-    # needs: [Toolchain] # Больше не зависит от джобы Toolchain
-    runs-on: ubuntu-22.04 # Используем ubuntu-22.04, как было у вас, хотя в примере 24.04
+    runs-on: ubuntu-22.04 # Или ubuntu-24.04, если хотите самую свежую
 
     steps:
       - name: Initialize Environment
@@ -108,10 +100,10 @@ jobs:
 
       - name: Checkout Your Repository (for scripts and configs)
         uses: actions/checkout@v4
-        # Этот шаг клонирует ваш репозиторий (с feeds.sh, diy_vX.sh, config/, vermagic_update.sh)
-        # в $GITHUB_WORKSPACE. Отсюда мы будем копировать файлы в склонированный OpenWrt.
+        # Этот шаг клонирует ваш репозиторий (с feeds.sh, diy_vX.sh, config/, custom/)
+        # в $GITHUB_WORKSPACE. Отсюда мы будем копировать/скачивать файлы.
 
-      - name: "Debug: List contents after checkout"
+      - name: "Debug: List contents of your repository after checkout"
         run: |
           echo "--- Contents of ${{ github.workspace }}/ ---"
           ls -RF "${{ github.workspace }}"
@@ -122,15 +114,10 @@ jobs:
           DEBIAN_FRONTEND: noninteractive
         run: |
           sudo -E apt-get -qq update
-          # Устанавливаем зависимости. curl необходим для скачивания списка зависимостей.
-          # kmod тут остается, так как он может быть в списке зависимостей.
-          # squashfs-tools тоже можно оставить, может пригодиться для других операций,
-          # но для распаковки toolchain больше не нужен.
           sudo -E apt-get -qq install -y $(curl -fsSL https://pastebin.com/raw/y5mk4S1a)
           sudo -E apt-get -qq autoremove --purge
           sudo -E apt-get -qq clean
           df -hT
-          # Строки про modprobe overlay удалены, т.к. overlayfs больше не используется
           
       - name: Clone OpenWrt Source Code
         id: clone_openwrt
@@ -149,19 +136,7 @@ jobs:
           echo "OPENWRT_ROOT_PATH=$(realpath .)" >> "$GITHUB_ENV"
           echo "OpenWrt source cloned to $OPENWRT_ROOT_PATH"
           
-      - name: Copy Builder Files into OpenWrt Source (using rsync as in example)
-        run: |
-          # Копируем содержимое вашего репозитория (скрипты, конфиги, vermagic_update.sh)
-          # в склонированный репозиторий OpenWrt.
-          # Исключаем .git, workspace/ и саму директорию OpenWrt, чтобы не скопировать лишнее.
-          rsync -avq --exclude=".git/" --exclude="workspace/" --exclude="$BUILD_ROOT_DIR/" "${{ github.workspace }}/" "$OPENWRT_ROOT_PATH/"
-          
-          # Отладочный вывод, чтобы убедиться, что файлы скопировались
-          echo "--- Contents of $OPENWRT_ROOT_PATH/ after rsync ---"
-          ls -F "$OPENWRT_ROOT_PATH/"
-          echo "--- End of Contents ---"
-
-      - name: Generate Variables (Moved from Toolchain Job, adjusted)
+      - name: Generate Variables and Copy Config
         id: env
         run: |
           export SOURCE_OWNER=$(echo "$SOURCE_URL" | awk -F '/' '{print $(NF-1)}')
@@ -176,14 +151,30 @@ jobs:
           echo "CURRENT_BRANCH=$CURRENT_BRANCH" >> "$GITHUB_ENV"
           echo "CURRENT_BRANCH=$CURRENT_BRANCH" >> "$GITHUB_OUTPUT"
           
-          # Копируем .config, теперь он должен быть в ${{ github.workspace }}/config/
+          # Копируем .config из вашей директории config/
           if [[ "$CONFIG_LINK" == "true" && -n "$CONFIG_URL" ]]; then
+            echo "Скачиваем .config по URL: $CONFIG_URL"
             curl -s "$CONFIG_URL" -o ".config"
           else
-            # Предполагаем, что config/ находится в корне вашего репозитория,
-            # и он был скопирован rsync'ом в $OPENWRT_ROOT_PATH
-            cp "config/$CONFIG_FILE" ".config"
+            # Предполагаем, что config/ находится в ${{ github.workspace }}/config/
+            CONFIG_SOURCE_PATH="${{ github.workspace }}/$CONFIG_DIR_PATH/$CONFIG_FILE"
+            if [ -f "$CONFIG_SOURCE_PATH" ]; then
+                echo "Копируем .config из $CONFIG_SOURCE_PATH"
+                cp "$CONFIG_SOURCE_PATH" ".config"
+            else
+                echo "Ошибка: Файл конфигурации $CONFIG_FILE не найден в $CONFIG_SOURCE_PATH."
+                echo "Содержимое ${{ github.workspace }}/$CONFIG_DIR_PATH/:"
+                ls -l "${{ github.workspace }}/$CONFIG_DIR_PATH/" || true
+                exit 1 # Выходим с ошибкой, если .config не найден
+            fi
           fi
+          
+          # Проверяем, что .config был создан/скопирован
+          if [ ! -f ".config" ]; then
+              echo "Ошибка: .config файл не был создан или скопирован. Сборка не может продолжаться."
+              exit 1
+          fi
+
           make defconfig
           
           export DEVICE_NAME=$(grep 'CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/')
@@ -199,24 +190,9 @@ jobs:
           echo "DEVICE_SUBTARGET=$DEVICE_SUBTARGET" >> "$GITHUB_ENV"
           echo "DEVICE_SUBTARGET=$DEVICE_SUBTARGET" >> "$GITHUB_OUTPUT"
           
-          # TOOLCHAIN_IMAGE и CURRENT_HASH больше не используются для кэширования
-          # Но BUILD_DATE все еще полезен
           export BUILD_DATE=$(date +"%Y-%m-%d-%H%M")
           echo "BUILD_DATE=$BUILD_DATE" >> "$GITHUB_ENV"
           echo "BUILD_DATE=$BUILD_DATE" >> "$GITHUB_OUTPUT"
-          
-          # REBUILD_CHECK тоже больше не нужен, т.к. всегда будет полная сборка toolchain
-          # echo "REBUILD_CHECK=true" >> "$GITHUB_OUTPUT" # Это можно удалить
-
-      # Шаги Get Release Hash, Compare Toolchain Hash, Install Feeds (Toolchain),
-      # Compile Tools, Compile Toolchain, Generate Toolchain Image, Upload Toolchain Image To Artifact,
-      # Delete Old Toolchain Assets From Release, Upload Toolchain Image To Release - УДАЛЕНЫ
-      # Они были частью джобы Toolchain и больше не нужны.
-
-      - name: Load Custom Configuration # Этот шаг частично объединен с Generate Variables выше, но оставляем для ясности
-        run: |
-          cd "$OPENWRT_ROOT_PATH"
-          # .config уже скопирован и применен в Generate Variables
 
       - name: Inject Correct Kernel Vermagic from official source
         if: ${{ env.VERMAGIC == 'true' }}
@@ -224,26 +200,34 @@ jobs:
           cd "$OPENWRT_ROOT_PATH"
           
           # Скачиваем vermagic_update.sh из ветки main репозитория recrumptor/openwrt
-          # и делаем его исполняемым
           echo "Скачивание vermagic_update.sh из https://github.com/recrumptor/openwrt/raw/main/vermagic_update.sh"
           curl -sSLo vermagic_update.sh https://github.com/recrumptor/openwrt/raw/main/vermagic_update.sh
           
           if [ ! -f "vermagic_update.sh" ]; then
-            echo "Ошибка: vermagic_update.sh не удалось скачать."
+            echo "Ошибка: vermagic_update.sh не удалось скачать. Возможно, изменился путь или файл отсутствует."
             exit 1
           fi
 
           chmod +x ./vermagic_update.sh
           ./vermagic_update.sh ${{ env.DEVICE_TARGET }} ${{ env.DEVICE_SUBTARGET }}
         env:
-          # Этот REPO_URL здесь для vermagic_update.sh,
-          # не путать с SOURCE_URL для клонирования OpenWrt
-          REPO_URL: https://downloads.openwrt.org/snapshots/
+          REPO_URL: https://downloads.openwrt.org/snapshots/ # Эта переменная нужна для vermagic_update.sh
 
       - name: Load Custom Feeds
         run: |
-          # feeds.sh должен был быть скопирован rsync'ом
           cd "$OPENWRT_ROOT_PATH"
+          
+          # Скачиваем feeds.sh из вашего репозитория (из директории scripts/)
+          YOUR_REPO_SCRIPTS_RAW_URL="${{ github.server_url }}/${{ github.repository }}/raw/${{ github.ref_name }}/scripts"
+          
+          echo "Скачивание feeds.sh из $YOUR_REPO_SCRIPTS_RAW_URL/$FEEDS_SH"
+          curl -sSLo "$FEEDS_SH" "$YOUR_REPO_SCRIPTS_RAW_URL/$FEEDS_SH"
+          
+          if [ ! -f "$FEEDS_SH" ]; then
+            echo "Ошибка: $FEEDS_SH не удалось скачать. Убедитесь, что он находится в $YOUR_REPO_SCRIPTS_RAW_URL."
+            exit 1
+          fi
+
           chmod +x "./$FEEDS_SH" && "./$FEEDS_SH"
 
       - name: Install Feeds
@@ -275,8 +259,16 @@ jobs:
               exit 1
           fi
 
-          # feeds_pkg.sh должен был быть скопирован rsync'ом
-          cp "${{ github.workspace }}/scripts/$FEEDS_PKG_SH" "$OPENWRT_ROOT_PATH/$FEEDS_PKG_SH" # Это не нужно, если rsync копирует scripts/
+          # Скачиваем feeds_pkg.sh из вашего репозитория (из директории scripts/)
+          YOUR_REPO_SCRIPTS_RAW_URL="${{ github.server_url }}/${{ github.repository }}/raw/${{ github.ref_name }}/scripts"
+          echo "Скачивание feeds_pkg.sh из $YOUR_REPO_SCRIPTS_RAW_URL/$FEEDS_PKG_SH"
+          curl -sSLo "$FEEDS_PKG_SH" "$YOUR_REPO_SCRIPTS_RAW_URL/$FEEDS_PKG_SH"
+          
+          if [ ! -f "$FEEDS_PKG_SH" ]; then
+            echo "Ошибка: $FEEDS_PKG_SH не удалось скачать. Убедитесь, что он находится в $YOUR_REPO_SCRIPTS_RAW_URL."
+            exit 1
+          fi
+
           chmod +x "./$FEEDS_PKG_SH" && "./$FEEDS_PKG_SH"
 
           ./scripts/feeds install -a V=s
@@ -289,25 +281,38 @@ jobs:
           include-hidden-files: true
           retention-days: 7
 
-      - name: Load DIY
+      - name: Load DIY and Copy Custom Files
         run: |
-          # diy_vX.sh должен был быть скопирован rsync'ом
-          # cp "${{ github.workspace }}/scripts/$DIY_SH" "$OPENWRT_ROOT_PATH/$DIY_SH" # Это не нужно, если rsync копирует scripts/
-          
-          # Если директория 'custom' есть в вашем репозитории, rsync ее скопирует.
-          # Этот блок можно удалить, если custom/ всегда будет в корне OpenWrt
-          # if [ -d "${{ github.workspace }}/custom" ]; then
-          #   mv "${{ github.workspace }}/custom" "$OPENWRT_ROOT_PATH/custom"
-          # fi
-          
           cd "$OPENWRT_ROOT_PATH"
+          
+          # Скачиваем DIY_SH из вашего репозитория (из директории scripts/)
+          YOUR_REPO_SCRIPTS_RAW_URL="${{ github.server_url }}/${{ github.repository }}/raw/${{ github.ref_name }}/scripts"
+          
+          echo "Скачивание $DIY_SH из $YOUR_REPO_SCRIPTS_RAW_URL/$DIY_SH"
+          curl -sSLo "$DIY_SH" "$YOUR_REPO_SCRIPTS_RAW_URL/$DIY_SH"
+          
+          if [ ! -f "$DIY_SH" ]; then
+            echo "Ошибка: $DIY_SH не удалось скачать. Убедитесь, что он находится в $YOUR_REPO_SCRIPTS_RAW_URL."
+            exit 1
+          fi
+
           chmod +x "./$DIY_SH" && "./$DIY_SH"
 
+          # Копирование директории 'custom/' из вашего репозитория, если она существует.
+          # Она находится в корне вашего репозитория.
+          YOUR_REPO_CUSTOM_PATH="${{ github.workspace }}/$CUSTOM_DIR_PATH"
+          if [ -d "$YOUR_REPO_CUSTOM_PATH" ]; then
+            echo "Копирование директории custom/ из $YOUR_REPO_CUSTOM_PATH"
+            cp -a "$YOUR_REPO_CUSTOM_PATH" "$OPENWRT_ROOT_PATH/"
+          else
+            echo "Директория custom/ не найдена в $YOUR_REPO_CUSTOM_PATH. Пропускаем копирование."
+          fi
+          
       - name: Download Packages
         id: download
         run: |
           cd "$OPENWRT_ROOT_PATH"
-          make download -j$(($(nproc) + 1)) || make download -j1 V=s # Используем (nproc)+1 для более эффективного использования ядер
+          make download -j$(($(nproc) + 1)) || make download -j1 V=s 
           find dl -size -1024c -exec ls -l {} \;
           find dl -size -1024c -exec rm -f {} \;
 
@@ -319,7 +324,7 @@ jobs:
           make buildinfo
           make diffconfig buildversion feedsversion
           make target/compile -j$(($(nproc) + 1)) IGNORE_ERRORS="m n" BUILD_LOG=1 || \
-          yes n | make target/compile -j1 V=s IGNORE_ERRORS=1 # Сделал более устойчивым к ошибкам, как вы раньше просили
+          yes n | make target/compile -j1 V=s IGNORE_ERRORS=1
           make package/compile -j$(($(nproc) + 1)) IGNORE_ERRORS=1 || make package/compile -j1 V=s IGNORE_ERRORS=1
           make package/index
 
