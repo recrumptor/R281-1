@@ -54,12 +54,16 @@ env:
   SOURCE_ORIGIN: https://github.com/recrumptor/openwrt # Для слияния upstream изменений
   SOURCE_BRANCH: ${{ github.event.inputs.branch }}
 
-  # Настройки ваших скриптов и конфигов (пути относительно корня вашего репозитория)
-  FEEDS_SH_PATH: scripts/feeds.sh
-  FEEDS_PKG_SH_PATH: scripts/feeds_pkg.sh
-  DIY_SH_PATH: scripts/${{ github.event.inputs.diy }} # Путь к diy_v1.sh или diy_v2.sh
-  CONFIG_DIR_PATH: config/ # Директория для .config файлов
-  CUSTOM_DIR_PATH: custom/ # Директория для custom/ файлов, если есть
+  # Настройки ваших скриптов и конфигов (имена файлов, без пути)
+  FEEDS_SH: feeds.sh
+  FEEDS_PKG_SH: feeds_pkg.sh
+  DIY_SH: ${{ github.event.inputs.diy }} # Будет diy_v1.sh или diy_v2.sh
+  
+  # Новые переменные для путей к директориям ваших скриптов и конфигов в вашем репозитории
+  # Это удобно для формирования URL для curl и для копирования
+  YOUR_SCRIPTS_DIR: scripts
+  YOUR_CONFIG_DIR: config
+  YOUR_CUSTOM_DIR: custom
 
   # Переменные из ввода воркфлоу
   CONFIG_FILE: ${{ github.event.inputs.config_file }}
@@ -157,14 +161,14 @@ jobs:
             curl -s "$CONFIG_URL" -o ".config"
           else
             # Предполагаем, что config/ находится в ${{ github.workspace }}/config/
-            CONFIG_SOURCE_PATH="${{ github.workspace }}/$CONFIG_DIR_PATH/$CONFIG_FILE"
+            CONFIG_SOURCE_PATH="${{ github.workspace }}/$YOUR_CONFIG_DIR/$CONFIG_FILE"
             if [ -f "$CONFIG_SOURCE_PATH" ]; then
                 echo "Копируем .config из $CONFIG_SOURCE_PATH"
                 cp "$CONFIG_SOURCE_PATH" ".config"
             else
                 echo "Ошибка: Файл конфигурации $CONFIG_FILE не найден в $CONFIG_SOURCE_PATH."
-                echo "Содержимое ${{ github.workspace }}/$CONFIG_DIR_PATH/:"
-                ls -l "${{ github.workspace }}/$CONFIG_DIR_PATH/" || true
+                echo "Содержимое ${{ github.workspace }}/$YOUR_CONFIG_DIR/:"
+                ls -l "${{ github.workspace }}/$YOUR_CONFIG_DIR/" || true
                 exit 1 # Выходим с ошибкой, если .config не найден
             fi
           fi
@@ -218,7 +222,7 @@ jobs:
           cd "$OPENWRT_ROOT_PATH"
           
           # Скачиваем feeds.sh из вашего репозитория (из директории scripts/)
-          YOUR_REPO_SCRIPTS_RAW_URL="${{ github.server_url }}/${{ github.repository }}/raw/${{ github.ref_name }}/scripts"
+          YOUR_REPO_SCRIPTS_RAW_URL="${{ github.server_url }}/${{ github.repository }}/raw/${{ github.ref_name }}/$YOUR_SCRIPTS_DIR"
           
           echo "Скачивание feeds.sh из $YOUR_REPO_SCRIPTS_RAW_URL/$FEEDS_SH"
           curl -sSLo "$FEEDS_SH" "$YOUR_REPO_SCRIPTS_RAW_URL/$FEEDS_SH"
@@ -260,7 +264,7 @@ jobs:
           fi
 
           # Скачиваем feeds_pkg.sh из вашего репозитория (из директории scripts/)
-          YOUR_REPO_SCRIPTS_RAW_URL="${{ github.server_url }}/${{ github.repository }}/raw/${{ github.ref_name }}/scripts"
+          YOUR_REPO_SCRIPTS_RAW_URL="${{ github.server_url }}/${{ github.repository }}/raw/${{ github.ref_name }}/$YOUR_SCRIPTS_DIR"
           echo "Скачивание feeds_pkg.sh из $YOUR_REPO_SCRIPTS_RAW_URL/$FEEDS_PKG_SH"
           curl -sSLo "$FEEDS_PKG_SH" "$YOUR_REPO_SCRIPTS_RAW_URL/$FEEDS_PKG_SH"
           
@@ -286,7 +290,7 @@ jobs:
           cd "$OPENWRT_ROOT_PATH"
           
           # Скачиваем DIY_SH из вашего репозитория (из директории scripts/)
-          YOUR_REPO_SCRIPTS_RAW_URL="${{ github.server_url }}/${{ github.repository }}/raw/${{ github.ref_name }}/scripts"
+          YOUR_REPO_SCRIPTS_RAW_URL="${{ github.server_url }}/${{ github.repository }}/raw/${{ github.ref_name }}/$YOUR_SCRIPTS_DIR"
           
           echo "Скачивание $DIY_SH из $YOUR_REPO_SCRIPTS_RAW_URL/$DIY_SH"
           curl -sSLo "$DIY_SH" "$YOUR_REPO_SCRIPTS_RAW_URL/$DIY_SH"
@@ -300,7 +304,7 @@ jobs:
 
           # Копирование директории 'custom/' из вашего репозитория, если она существует.
           # Она находится в корне вашего репозитория.
-          YOUR_REPO_CUSTOM_PATH="${{ github.workspace }}/$CUSTOM_DIR_PATH"
+          YOUR_REPO_CUSTOM_PATH="${{ github.workspace }}/$YOUR_CUSTOM_DIR"
           if [ -d "$YOUR_REPO_CUSTOM_PATH" ]; then
             echo "Копирование директории custom/ из $YOUR_REPO_CUSTOM_PATH"
             cp -a "$YOUR_REPO_CUSTOM_PATH" "$OPENWRT_ROOT_PATH/"
