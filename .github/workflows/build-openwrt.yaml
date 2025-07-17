@@ -1,3 +1,5 @@
+
+#
 # Copyright (c) 2023 LENAR
 #
 # This is free software, licensed under the MIT License.
@@ -43,53 +45,65 @@ on:
         description: "Firmware Release"
         type: boolean
         default: false
+      toolchain_release:
+        description: "Toolchain Release"
+        type: boolean
+        default: true
+      toolchain_rebuild:
+        description: "Force Rebuild Toolchain"
+        type: boolean
+        default: false
       vermagic:
-        description: "Inject official kernel vermagic for kmod compatibility"
+        description: "Replace Vermagic"
+        type: boolean
+        default: false
+      vermagic_opt:
+        description: "Use SNAPSHOT Vermagic"
         type: boolean
         default: true
 
 env:
-  # Настройки репозитория OpenWrt для клонирования
-  SOURCE_URL: https://github.com/recrumptor/openwrt 
-  SOURCE_ORIGIN: https://github.com/recrumptor/openwrt # Для слияния upstream изменений
+  SOURCE_URL: https://github.com/recrumptor/openwrt
+  SOURCE_ORIGIN: https://github.com/openwrt/openwrt
   SOURCE_BRANCH: ${{ github.event.inputs.branch }}
-
-  # Настройки ваших скриптов и конфигов (имена файлов, без пути)
   FEEDS_SH: feeds.sh
   FEEDS_PKG_SH: feeds_pkg.sh
-  DIY_SH: ${{ github.event.inputs.diy }} # Будет diy_v1.sh или diy_v2.sh
-  
-  # Новые переменные для путей к директориям ваших скриптов и конфигов в вашем репозитории
-  # Это удобно для формирования URL для curl и для копирования
-  YOUR_SCRIPTS_DIR: scripts
-  YOUR_CONFIG_DIR: config
-  YOUR_CUSTOM_DIR: custom
-
-  # Переменные из ввода воркфлоу
   CONFIG_FILE: ${{ github.event.inputs.config_file }}
   CONFIG_LINK: ${{ github.event.inputs.config_link }}
   CONFIG_URL: ${{ github.event.inputs.config_url }}
+  DIY_SH: ${{ github.event.inputs.diy }}
   FIRMWARE_RELEASE: ${{ github.event.inputs.firmware_release }}
+  TOOLCHAIN_RELEASE: ${{ github.event.inputs.toolchain_release }}
+  TOOLCHAIN_REBUILD: ${{ github.event.inputs.toolchain_rebuild }}
+  TOOLCHAIN_TAG: toolchain
   VERMAGIC: ${{ github.event.inputs.vermagic }}
-
-  # Общие переменные окружения
+  VERMAGIC_OPT: ${{ github.event.inputs.vermagic_opt }}
   TOKEN: ${{ secrets.GITHUB_TOKEN }}
   TZ: UTC
-  BUILD_ROOT_DIR: openwrt_source # Директория, куда будет клонирован OpenWrt
 
 jobs:
-  Build:
-    name: Build OpenWrt Firmware
-    runs-on: ubuntu-22.04 # Или ubuntu-24.04, если хотите самую свежую
+  Toolchain:
+    runs-on: ubuntu-latest
+
+    outputs:
+      OPENWRT_ROOT_PATH: ${{ steps.clone.outputs.OPENWRT_ROOT_PATH }}
+      SOURCE_OWNER: ${{ steps.env.outputs.SOURCE_OWNER }}
+      SOURCE_REPO: ${{ steps.env.outputs.SOURCE_REPO }}
+      CURRENT_BRANCH: ${{ steps.env.outputs.CURRENT_BRANCH }}
+      DEVICE_NAME: ${{ steps.env.outputs.DEVICE_NAME }}
+      DEVICE_PLATFORM: ${{ steps.env.outputs.DEVICE_PLATFORM }}
+      DEVICE_TARGET: ${{ steps.env.outputs.DEVICE_TARGET }}
+      DEVICE_SUBTARGET: ${{ steps.env.outputs.DEVICE_SUBTARGET }}
+      TOOLCHAIN_IMAGE: ${{ steps.env.outputs.TOOLCHAIN_IMAGE }}
+      BUILD_DATE: ${{ steps.env.outputs.BUILD_DATE }}
 
     steps:
       - name: Initialize Environment
         run: |
           sudo timedatectl set-timezone "$TZ"
-          mkdir -p workspace # Создаем рабочую директорию
+          mkdir -p workspace
           df -hT
           ulimit -n 8192
-
       - name: Maximize Build Space
         uses: easimon/maximize-build-space@master
         with:
@@ -102,16 +116,8 @@ jobs:
           remove-codeql: 'true'
           remove-docker-images: 'true'
 
-      - name: Checkout Your Repository (for scripts and configs)
+      - name: Checkout
         uses: actions/checkout@v4
-        # Этот шаг клонирует ваш репозиторий (с feeds.sh, diy_vX.sh, config/, custom/)
-        # в $GITHUB_WORKSPACE. Отсюда мы будем копировать/скачивать файлы.
-
-      - name: "Debug: List contents of your repository after checkout"
-        run: |
-          echo "--- Contents of ${{ github.workspace }}/ ---"
-          ls -RF "${{ github.workspace }}"
-          echo "--- End of Contents ---"
 
       - name: Install Packages
         env:
@@ -122,161 +128,285 @@ jobs:
           sudo -E apt-get -qq autoremove --purge
           sudo -E apt-get -qq clean
           df -hT
-          
-      - name: Clone OpenWrt Source Code
-        id: clone_openwrt
+      - name: Clone Source Code
+        id: clone
         run: |
-          # Клонируем OpenWrt в директорию внутри workspace
-          git clone --single-branch "$SOURCE_URL" -b "$SOURCE_BRANCH" workspace/$BUILD_ROOT_DIR
-          
-          cd workspace/$BUILD_ROOT_DIR
+          git clone --single-branch $SOURCE_URL -b $SOURCE_BRANCH workspace/openwrt
+          cd workspace/openwrt
           git config --global user.name "github-actions"
           git config --global user.email "github-actions@github.com"
-          git remote add upstream "$SOURCE_ORIGIN" || true # Добавляем upstream, если еще нет
-          git fetch upstream "$SOURCE_BRANCH"
-          git merge upstream/"$SOURCE_BRANCH"
-
-          # Устанавливаем OPENWRT_ROOT_PATH на склонированный OpenWrt
-          echo "OPENWRT_ROOT_PATH=$(realpath .)" >> "$GITHUB_ENV"
-          echo "OpenWrt source cloned to $OPENWRT_ROOT_PATH"
-          
-      - name: Generate Variables and Copy Config
+          git remote add upstream $SOURCE_ORIGIN
+          git fetch upstream $SOURCE_BRANCH
+          git merge upstream/$SOURCE_BRANCH
+          echo "OPENWRT_ROOT_PATH=$PWD" >> $GITHUB_ENV
+          echo "OPENWRT_ROOT_PATH=$PWD" >> $GITHUB_OUTPUT
+      - name: Generate Toolchain Configuration
+        run: |
+          if [[ "$CONFIG_LINK" == "true" && -n "$CONFIG_URL" ]]; then
+            curl -s $CONFIG_URL -o $OPENWRT_ROOT_PATH/.config
+          else
+            cp ./config/$CONFIG_FILE $OPENWRT_ROOT_PATH/.config
+          fi
+          echo -e "\nCONFIG_ALL=y\nCONFIG_ALL_NONSHARED=y" >> $OPENWRT_ROOT_PATH/.config
+          cd $OPENWRT_ROOT_PATH
+          make defconfig
+      - name: Generate Variables
         id: env
         run: |
-          export SOURCE_OWNER=$(echo "$SOURCE_URL" | awk -F '/' '{print $(NF-1)}')
-          echo "SOURCE_OWNER=$SOURCE_OWNER" >> "$GITHUB_ENV"
-          echo "SOURCE_OWNER=$SOURCE_OWNER" >> "$GITHUB_OUTPUT"
-          export SOURCE_REPO=$(echo "$SOURCE_URL" | awk -F '/' '{print $NF}' | sed 's/\.git$//')
-          echo "SOURCE_REPO=$SOURCE_REPO" >> "$GITHUB_ENV"
-          echo "SOURCE_REPO=$SOURCE_REPO" >> "$GITHUB_OUTPUT"
-          
-          cd "$OPENWRT_ROOT_PATH"
+          export SOURCE_OWNER=$(echo $SOURCE_URL | awk -F '/' '{print $(NF-1)}')
+          echo "SOURCE_OWNER=$SOURCE_OWNER" >> $GITHUB_ENV
+          echo "SOURCE_OWNER=$SOURCE_OWNER" >> $GITHUB_OUTPUT
+          export SOURCE_REPO=$(echo $SOURCE_URL | awk -F '/' '{print $NF}' | sed 's/\.git$//')
+          echo "SOURCE_REPO=$SOURCE_REPO" >> $GITHUB_ENV
+          echo "SOURCE_REPO=$SOURCE_REPO" >> $GITHUB_OUTPUT
           export CURRENT_BRANCH=$(git symbolic-ref --short HEAD)
-          echo "CURRENT_BRANCH=$CURRENT_BRANCH" >> "$GITHUB_ENV"
-          echo "CURRENT_BRANCH=$CURRENT_BRANCH" >> "$GITHUB_OUTPUT"
-          
-          # Копируем .config из вашей директории config/
-          if [[ "$CONFIG_LINK" == "true" && -n "$CONFIG_URL" ]]; then
-            echo "Скачиваем .config по URL: $CONFIG_URL"
-            curl -s "$CONFIG_URL" -o ".config"
-          else
-            # Предполагаем, что config/ находится в ${{ github.workspace }}/config/
-            CONFIG_SOURCE_PATH="${{ github.workspace }}/$YOUR_CONFIG_DIR/$CONFIG_FILE"
-            if [ -f "$CONFIG_SOURCE_PATH" ]; then
-                echo "Копируем .config из $CONFIG_SOURCE_PATH"
-                cp "$CONFIG_SOURCE_PATH" ".config"
-            else
-                echo "Ошибка: Файл конфигурации $CONFIG_FILE не найден в $CONFIG_SOURCE_PATH."
-                echo "Содержимое ${{ github.workspace }}/$YOUR_CONFIG_DIR/:"
-                ls -l "${{ github.workspace }}/$YOUR_CONFIG_DIR/" || true
-                exit 1 # Выходим с ошибкой, если .config не найден
-            fi
-          fi
-          
-          # Проверяем, что .config был создан/скопирован
-          if [ ! -f ".config" ]; then
-              echo "Ошибка: .config файл не был создан или скопирован. Сборка не может продолжаться."
-              exit 1
-          fi
-
-          make defconfig
-          
+          echo "CURRENT_BRANCH=$CURRENT_BRANCH" >> $GITHUB_ENV
+          echo "CURRENT_BRANCH=$CURRENT_BRANCH" >> $GITHUB_OUTPUT
+          cd $OPENWRT_ROOT_PATH
           export DEVICE_NAME=$(grep 'CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/')
-          echo "DEVICE_NAME=$DEVICE_NAME" >> "$GITHUB_ENV"
-          echo "DEVICE_NAME=$DEVICE_NAME" >> "$GITHUB_OUTPUT"
+          echo "DEVICE_NAME=$DEVICE_NAME" >> $GITHUB_ENV
+          echo "DEVICE_NAME=$DEVICE_NAME" >> $GITHUB_OUTPUT
           export DEVICE_PLATFORM=$(grep 'CONFIG_TARGET_ARCH_PACKAGES' .config | awk -F '"' '{print $2}')
-          echo "DEVICE_PLATFORM=$DEVICE_PLATFORM" >> "$GITHUB_ENV"
-          echo "DEVICE_PLATFORM=$DEVICE_PLATFORM" >> "$GITHUB_OUTPUT"
+          echo "DEVICE_PLATFORM=$DEVICE_PLATFORM" >> $GITHUB_ENV
+          echo "DEVICE_PLATFORM=$DEVICE_PLATFORM" >> $GITHUB_OUTPUT
           export DEVICE_TARGET=$(grep 'CONFIG_TARGET_BOARD' .config | awk -F '"' '{print $2}')
-          echo "DEVICE_TARGET=$DEVICE_TARGET" >> "$GITHUB_ENV"
-          echo "DEVICE_TARGET=$DEVICE_TARGET" >> "$GITHUB_OUTPUT"
+          echo "DEVICE_TARGET=$DEVICE_TARGET" >> $GITHUB_ENV
+          echo "DEVICE_TARGET=$DEVICE_TARGET" >> $GITHUB_OUTPUT
           export DEVICE_SUBTARGET=$(grep 'CONFIG_TARGET_SUBTARGET' .config | awk -F '"' '{print $2}')
-          echo "DEVICE_SUBTARGET=$DEVICE_SUBTARGET" >> "$GITHUB_ENV"
-          echo "DEVICE_SUBTARGET=$DEVICE_SUBTARGET" >> "$GITHUB_OUTPUT"
-          
+          echo "DEVICE_SUBTARGET=$DEVICE_SUBTARGET" >> $GITHUB_ENV
+          echo "DEVICE_SUBTARGET=$DEVICE_SUBTARGET" >> $GITHUB_OUTPUT
+          export TOOLCHAIN_IMAGE="toolchain-$SOURCE_OWNER-$SOURCE_REPO-$SOURCE_BRANCH-$DEVICE_TARGET-$DEVICE_SUBTARGET"
+          echo "TOOLCHAIN_IMAGE=$TOOLCHAIN_IMAGE" >> $GITHUB_ENV
+          echo "TOOLCHAIN_IMAGE=$TOOLCHAIN_IMAGE" >> $GITHUB_OUTPUT
           export BUILD_DATE=$(date +"%Y-%m-%d-%H%M")
-          echo "BUILD_DATE=$BUILD_DATE" >> "$GITHUB_ENV"
-          echo "BUILD_DATE=$BUILD_DATE" >> "$GITHUB_OUTPUT"
+          echo "BUILD_DATE=$BUILD_DATE" >> $GITHUB_ENV
+          echo "BUILD_DATE=$BUILD_DATE" >> $GITHUB_OUTPUT
+      - name: Get Release Hash
+        continue-on-error: true
+        uses: robinraju/release-downloader@v1.12
+        with:
+          token: ${{ env.TOKEN }}
+          repository: ${{ GITHUB.REPOSITORY }}
+          fileName: ${{ env.TOOLCHAIN_IMAGE }}.hash
+          tag: ${{ env.TOOLCHAIN_TAG }}
 
-      - name: Inject Correct Kernel Vermagic from official source
-        if: ${{ env.VERMAGIC == 'true' }}
+      - name: Compare Toolchain Hash
+        id: hash
         run: |
-          cd "$OPENWRT_ROOT_PATH"
-          
-          # Скачиваем vermagic_update.sh из ветки main репозитория recrumptor/openwrt
-          echo "Скачивание vermagic_update.sh из https://github.com/recrumptor/openwrt/raw/main/vermagic_update.sh"
-          curl -sSLo vermagic_update.sh https://github.com/recrumptor/openwrt/raw/main/vermagic_update.sh
-          
-          if [ ! -f "vermagic_update.sh" ]; then
-            echo "Ошибка: vermagic_update.sh не удалось скачать. Возможно, изменился путь или файл отсутствует."
-            exit 1
+          if [ -f "$TOOLCHAIN_IMAGE.hash" ]; then
+            export CACHE_HASH=$(cat $TOOLCHAIN_IMAGE.hash)
+            echo "Cached hash is $CACHE_HASH"
+          else
+            echo "No cached hash found"
           fi
+          cd $OPENWRT_ROOT_PATH
+          export CURRENT_HASH=$(git log --pretty=tformat:"%H" -n1 tools toolchain)
+          echo "CURRENT_HASH=$CURRENT_HASH" >> $GITHUB_ENV
+          echo "CURRENT_HASH=$CURRENT_HASH" >> $GITHUB_OUTPUT
+          echo "CURRENT_HASH is $CURRENT_HASH"
+          if [ -z "$CACHE_HASH" ] || [ "$CURRENT_HASH" != "$CACHE_HASH" ] || [ "${{ env.TOOLCHAIN_REBUILD }}" == "true" ]; then
+            echo "REBUILD_CHECK=true" >> $GITHUB_ENV
+            echo "REBUILD_CHECK=true" >> $GITHUB_OUTPUT
+          fi
+      - name: Install Feeds
+        if: ${{ env.REBUILD_CHECK == 'true' }}
+        run: |
+          echo "Install Feeds Toolchain"
+          cd $OPENWRT_ROOT_PATH
+          ./scripts/feeds clean
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+      - name: Load Custom Configuration
+        if: ${{ env.REBUILD_CHECK == 'true' }}
+        run: |
+          if [[ "$CONFIG_LINK" == "true" && -n "$CONFIG_URL" ]]; then
+            curl -s $CONFIG_URL -o $OPENWRT_ROOT_PATH/.config
+          else
+            cp ./config/$CONFIG_FILE $OPENWRT_ROOT_PATH/.config
+          fi
+          cd $OPENWRT_ROOT_PATH
+          make defconfig
+      - name: Compile Tools
+        if: ${{ env.REBUILD_CHECK == 'true' }}
+        run: |
+          cd $OPENWRT_ROOT_PATH
+          echo -e "$(nproc) Thread Compile"
+          make tools/compile -j$(($(nproc) + 1)) || make tools/compile -j1 V=s
+      - name: Compile Toolchain
+        if: ${{ env.REBUILD_CHECK == 'true' }}
+        run: |
+          cd $OPENWRT_ROOT_PATH
+          echo -e "$(nproc) Thread Compile"
+          make toolchain/compile -j$(($(nproc) + 1)) || make toolchain/compile -j1 V=s
+          rm -rf .config* dl bin
+      - name: Generate Toolchain Image
+        if: ${{ env.REBUILD_CHECK == 'true' }}
+        run: |
+          cd workspace
+          mksquashfs openwrt $TOOLCHAIN_IMAGE -force-gid 1001 -force-uid 1001 -comp zstd -Xcompression-level 19
+          mkdir -p $GITHUB_WORKSPACE/output
+          split -d -b 1G $TOOLCHAIN_IMAGE $GITHUB_WORKSPACE/output/$TOOLCHAIN_IMAGE.img.
+          rm -f $TOOLCHAIN_IMAGE
+          cd $OPENWRT_ROOT_PATH
+          echo $CURRENT_HASH > $GITHUB_WORKSPACE/output/$TOOLCHAIN_IMAGE.hash
+          ls -lh $GITHUB_WORKSPACE/output
+      - name: Upload Toolchain Image To Artifact
+        if: ${{ env.TOOLCHAIN_RELEASE != 'true' && env.REBUILD_CHECK == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.TOOLCHAIN_IMAGE }}
+          path: output
+          retention-days: 7
 
-          chmod +x ./vermagic_update.sh
-          ./vermagic_update.sh ${{ env.DEVICE_TARGET }} ${{ env.DEVICE_SUBTARGET }}
+      - name: Delete Old Toolchain Assets From Release
+        if: ${{ env.TOOLCHAIN_RELEASE == 'true' && env.REBUILD_CHECK == 'true' }}
+        uses: mknejp/delete-release-assets@v1
+        with:
+          token: ${{ env.TOKEN }}
+          tag: ${{ env.TOOLCHAIN_TAG }}
+          assets: toolchain-${{ env.TOOLCHAIN_IMAGE }}.*
+          fail-if-no-assets: false
+          fail-if-no-release: false
+
+      - name: Upload Toolchain Image To Release
+        if: ${{ env.TOOLCHAIN_RELEASE == 'true' && env.REBUILD_CHECK == 'true' }}
+        uses: ncipollo/release-action@v1
+        with:
+          token: ${{ env.TOKEN }}
+          name: toolchain-image
+          commit: ${{ env.CURRENT_BRANCH }}
+          tag: ${{ env.TOOLCHAIN_TAG }}
+          artifacts: output/*
+          replacesArtifacts: true
+          allowUpdates: true
+          prerelease: true
+
+  Build:
+    needs: [Toolchain]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Initialize Environment
+        run: |
+          sudo timedatectl set-timezone "$TZ"
+          mkdir -p workspace
+          df -hT
+          ulimit -n 8192
+      - name: Restore Variables
+        run: |
+          echo "OPENWRT_ROOT_PATH=${{ needs.Toolchain.outputs.OPENWRT_ROOT_PATH }}" >> $GITHUB_ENV
+          echo "SOURCE_OWNER=${{ needs.Toolchain.outputs.SOURCE_OWNER }}" >> $GITHUB_ENV
+          echo "SOURCE_REPO=${{ needs.Toolchain.outputs.SOURCE_REPO }}" >> $GITHUB_ENV
+          echo "CURRENT_BRANCH=${{ needs.Toolchain.outputs.CURRENT_BRANCH }}" >> $GITHUB_ENV
+          echo "DEVICE_NAME=${{ needs.Toolchain.outputs.DEVICE_NAME }}" >> $GITHUB_ENV
+          echo "DEVICE_PLATFORM=${{ needs.Toolchain.outputs.DEVICE_PLATFORM }}" >> $GITHUB_ENV
+          echo "DEVICE_TARGET=${{ needs.Toolchain.outputs.DEVICE_TARGET }}" >> $GITHUB_ENV
+          echo "DEVICE_SUBTARGET=${{ needs.Toolchain.outputs.DEVICE_SUBTARGET }}" >> $GITHUB_ENV
+          echo "TOOLCHAIN_IMAGE=${{ needs.Toolchain.outputs.TOOLCHAIN_IMAGE }}" >> $GITHUB_ENV
+          echo "BUILD_DATE=${{ needs.Toolchain.outputs.BUILD_DATE }}" >> $GITHUB_ENV
+      - name: Maximize Build Space
+        uses: easimon/maximize-build-space@master
+        with:
+          root-reserve-mb: '4096'
+          temp-reserve-mb: '2048'
+          swap-size-mb: '2048'
+          remove-dotnet: 'true'
+          remove-android: 'true'
+          remove-haskell: 'true'
+          remove-codeql: 'true'
+          remove-docker-images: 'true'
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Packages
         env:
-          REPO_URL: https://downloads.openwrt.org/snapshots/ # Эта переменная нужна для vermagic_update.sh
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo -E apt-get -qq update
+          sudo -E apt-get -qq install -y $(curl -fsSL https://pastebin.com/raw/y5mk4S1a)
+          sudo -E apt-get -qq autoremove --purge
+          sudo -E apt-get -qq clean
+          df -hT
+      - name: Download Toolchain Image From Artifact
+        if: ${{ env.TOOLCHAIN_RELEASE != 'true' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.TOOLCHAIN_IMAGE }}
+          path: workspace
 
+      - name: Download Toolchain Image From Release
+        if: ${{ env.TOOLCHAIN_RELEASE == 'true' }}
+        uses: robinraju/release-downloader@v1.12
+        with:
+          token: ${{ env.TOKEN }}
+          repository: ${{ GITHUB.REPOSITORY }}
+          fileName: ${{ env.TOOLCHAIN_IMAGE }}.img.*
+          tag: ${{ env.TOOLCHAIN_TAG }}
+          out-file-path: workspace
+
+      - name: Prepare Toolchain Image
+        run: |
+          cd workspace
+          for i in {00..09}; do
+            if [ -f "$TOOLCHAIN_IMAGE.img.$i" ]; then
+              cat $TOOLCHAIN_IMAGE.img.$i >> $TOOLCHAIN_IMAGE.img
+              rm -f $TOOLCHAIN_IMAGE.img.$i
+            fi
+          done
+          mkdir -p openwrt-ro openwrt workdir overlay
+          sudo mount -o loop $TOOLCHAIN_IMAGE.img openwrt-ro
+          sudo mount -t overlay overlay -o lowerdir=openwrt-ro,upperdir=overlay,workdir=workdir openwrt
+      - name: Update Source Code
+        run: |
+          cd $OPENWRT_ROOT_PATH
+          git config --global user.name "github-actions"
+          git config --global user.email "github-actions@github.com"
+          git fetch upstream $SOURCE_BRANCH
+          git merge upstream/$SOURCE_BRANCH
       - name: Load Custom Feeds
         run: |
-          cd "$OPENWRT_ROOT_PATH"
-          
-          # Скачиваем feeds.sh из вашего репозитория (из директории scripts/)
-          YOUR_REPO_SCRIPTS_RAW_URL="${{ github.server_url }}/${{ github.repository }}/raw/${{ github.ref_name }}/$YOUR_SCRIPTS_DIR"
-          
-          echo "Скачивание feeds.sh из $YOUR_REPO_SCRIPTS_RAW_URL/$FEEDS_SH"
-          curl -sSLo "$FEEDS_SH" "$YOUR_REPO_SCRIPTS_RAW_URL/$FEEDS_SH"
-          
-          if [ ! -f "$FEEDS_SH" ]; then
-            echo "Ошибка: $FEEDS_SH не удалось скачать. Убедитесь, что он находится в $YOUR_REPO_SCRIPTS_RAW_URL."
-            exit 1
-          fi
-
-          chmod +x "./$FEEDS_SH" && "./$FEEDS_SH"
-
+          cp ./scripts/$FEEDS_SH $OPENWRT_ROOT_PATH/$FEEDS_SH
+          cd $OPENWRT_ROOT_PATH
+          chmod +x ./$FEEDS_SH && ./$FEEDS_SH
       - name: Install Feeds
         run: |
-          cd "$OPENWRT_ROOT_PATH"
-          
+          cp ./scripts/$FEEDS_PKG_SH $OPENWRT_ROOT_PATH/$FEEDS_PKG_SH
+          cd $OPENWRT_ROOT_PATH
           ./scripts/feeds clean
-
-          git config --global http.postBuffer 524288000
-          git config --global http.lowSpeedLimit 0
-          git config --global http.lowSpeedTime 999999
-
-          MAX_RETRIES=5
-          RETRY_COUNT=0
-          while [ "$RETRY_COUNT" -lt "$MAX_RETRIES" ]; do
-              echo "--- Попытка обновления фидов $((RETRY_COUNT + 1)) из $MAX_RETRIES ---"
-              if ./scripts/feeds update -a V=s; then
-                  echo "feeds update -a успешно завершено."
-                  break
-              else
-                  echo "feeds update -a завершилось ошибкой. Повтор через 15 секунд..."
-                  RETRY_COUNT=$((RETRY_COUNT + 1))
-                  sleep 15
-              fi
-          done
-
-          if [ "$RETRY_COUNT" -eq "$MAX_RETRIES" ]; then
-              echo "feeds update -a не удалось после $MAX_RETRIES попыток. Прерываю сборку."
-              exit 1
+          ./scripts/feeds update -a
+          chmod +x ./$FEEDS_PKG_SH && ./$FEEDS_PKG_SH
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+      - name: Load Custom Configuration And Vermagic
+        run: |
+          snapshot_version="${SOURCE_BRANCH#openwrt-}"
+          release_version=$(curl -s https://api.github.com/repos/openwrt/openwrt/tags \
+            | grep -m1 -oE "\"name\":\s*\"v${snapshot_version}\.[^\"]+\"" \
+            | cut -d'"' -f4 | sed 's/^v//')
+          if [[ "$CONFIG_LINK" == "true" && -n "$CONFIG_URL" ]]; then
+            curl -s $CONFIG_URL -o $OPENWRT_ROOT_PATH/.config
+          else
+            cp ./config/$CONFIG_FILE $OPENWRT_ROOT_PATH/.config
           fi
-
-          # Скачиваем feeds_pkg.sh из вашего репозитория (из директории scripts/)
-          YOUR_REPO_SCRIPTS_RAW_URL="${{ github.server_url }}/${{ github.repository }}/raw/${{ github.ref_name }}/$YOUR_SCRIPTS_DIR"
-          echo "Скачивание feeds_pkg.sh из $YOUR_REPO_SCRIPTS_RAW_URL/$FEEDS_PKG_SH"
-          curl -sSLo "$FEEDS_PKG_SH" "$YOUR_REPO_SCRIPTS_RAW_URL/$FEEDS_PKG_SH"
-          
-          if [ ! -f "$FEEDS_PKG_SH" ]; then
-            echo "Ошибка: $FEEDS_PKG_SH не удалось скачать. Убедитесь, что он находится в $YOUR_REPO_SCRIPTS_RAW_URL."
-            exit 1
+          if [[ "$VERMAGIC_OPT" == "true" ]]; then
+            version="${snapshot_version}-SNAPSHOT"
+          else
+            version="${release_version}"
           fi
-
-          chmod +x "./$FEEDS_PKG_SH" && "./$FEEDS_PKG_SH"
-
-          ./scripts/feeds install -a V=s
-
+          kmods=$(curl -s https://downloads.openwrt.org/releases/${version}/targets/${DEVICE_TARGET}/${DEVICE_SUBTARGET}/kmods/ \
+              | grep -oP '<td class="n"><a href="\K[^/]+|<td class="d">\K[^<]+' \
+              | paste -d '|' - - | sort -t '|' -k2 | head -n1 | cut -d '|' -f1)
+          echo "src/gz openwrt_kmods https://downloads.openwrt.org/releases/${version}/targets/${DEVICE_TARGET}/${DEVICE_SUBTARGET}/kmods/${kmods}" >> ./custom/files/etc/opkg/customfeeds.conf
+          cd $OPENWRT_ROOT_PATH
+          grep -q '^CONFIG_VERSION_REPO=' ./.config \
+            && sed -i "s|^CONFIG_VERSION_REPO=.*|CONFIG_VERSION_REPO=\"https://downloads.openwrt.org/releases/${version}\"|" ./.config \
+            || echo -e "\nCONFIG_VERSION_REPO=\"https://downloads.openwrt.org/releases/${version}\"" >> ./.config
+          if [[ "$VERMAGIC" == "true" ]]; then
+            echo "$kmods" | sed 's/.*-//' > .vermagic
+            sed -i -e 's/^\(.\).*vermagic$/\1cp $(TOPDIR)\/.vermagic $(LINUX_DIR)\/.vermagic/' ./include/kernel-defaults.mk
+          fi
+          make defconfig
       - name: Upload Config To Artifact
         uses: actions/upload-artifact@v4
         with:
@@ -285,148 +415,38 @@ jobs:
           include-hidden-files: true
           retention-days: 7
 
-      - name: Load DIY and Copy Custom Files
+      - name: Load DIY
         run: |
-          cd "$OPENWRT_ROOT_PATH"
-          
-          # Скачиваем DIY_SH из вашего репозитория (из директории scripts/)
-          YOUR_REPO_SCRIPTS_RAW_URL="${{ github.server_url }}/${{ github.repository }}/raw/${{ github.ref_name }}/$YOUR_SCRIPTS_DIR"
-          
-          echo "Скачивание $DIY_SH из $YOUR_REPO_SCRIPTS_RAW_URL/$DIY_SH"
-          curl -sSLo "$DIY_SH" "$YOUR_REPO_SCRIPTS_RAW_URL/$DIY_SH"
-          
-          if [ ! -f "$DIY_SH" ]; then
-            echo "Ошибка: $DIY_SH не удалось скачать. Убедитесь, что он находится в $YOUR_REPO_SCRIPTS_RAW_URL."
-            exit 1
-          fi
-
-          chmod +x "./$DIY_SH" && "./$DIY_SH"
-
-          # Копирование директории 'custom/' из вашего репозитория, если она существует.
-          # Она находится в корне вашего репозитория.
-          YOUR_REPO_CUSTOM_PATH="${{ github.workspace }}/$YOUR_CUSTOM_DIR"
-          if [ -d "$YOUR_REPO_CUSTOM_PATH" ]; then
-            echo "Копирование директории custom/ из $YOUR_REPO_CUSTOM_PATH"
-            cp -a "$YOUR_REPO_CUSTOM_PATH" "$OPENWRT_ROOT_PATH/"
-          else
-            echo "Директория custom/ не найдена в $YOUR_REPO_CUSTOM_PATH. Пропускаем копирование."
-          fi
-          
+          cp ./scripts/$DIY_SH $OPENWRT_ROOT_PATH/
+          mv ./custom $OPENWRT_ROOT_PATH/
+          cd $OPENWRT_ROOT_PATH
+          chmod +x ./$DIY_SH && ./$DIY_SH
       - name: Download Packages
         id: download
         run: |
-          cd "$OPENWRT_ROOT_PATH"
-          make download -j$(($(nproc) + 1)) || make download -j1 V=s 
+          cd $OPENWRT_ROOT_PATH
+          make download -j10 || make download -j10 V=s
           find dl -size -1024c -exec ls -l {} \;
           find dl -size -1024c -exec rm -f {} \;
-
       - name: Compile Packages
         run: |
-          cd "$OPENWRT_ROOT_PATH"
+          cd $OPENWRT_ROOT_PATH
           echo -e "$(nproc) Thread Compile"
-          
-          # make clean уже вызывается, но можно продублировать
           make clean
-          
-          # Отключаем parallelism временно, если ошибка не исчезает,
-          # чтобы получить более четкий лог.
-          # Используем V=sc для максимально подробного вывода.
-          # Добавляем make tools/compile и make toolchain/compile явно
-          # для проверки, собираются ли они вообще.
-          
-          echo "Начинаем сборку инструментов и toolchain..."
-          make tools/compile V=sc || { echo "Ошибка при сборке tools/compile"; exit 1; }
-          make toolchain/compile V=sc || { echo "Ошибка при сборке toolchain/compile"; exit 1; }
-
-          echo "Проверка PATH после сборки toolchain:"
-          echo "$PATH"
-          echo "Проверка содержимого staging_dir/host/bin и staging_dir/toolchain*/bin/:"
-          ls -l "$OPENWRT_ROOT_PATH/staging_dir/host/bin/" || true
-          ls -l "$OPENWRT_ROOT_PATH/staging_dir/"*/bin/ || true
-          
-          echo "Начинаем компиляцию ядра и пакетов..."
           make buildinfo
           make diffconfig buildversion feedsversion
-          
-          # Компилируем целевой образ и пакеты с подробным выводом V=sc
-          # Убираем IGNORE_ERRORS временно, чтобы не пропускать важные ошибки
-          make target/compile V=sc || { echo "Ошибка при make target/compile"; exit 1; }
-          make package/compile V=sc || { echo "Ошибка при make package/compile"; exit 1; }
+          make target/compile -j$(($(nproc) + 1)) IGNORE_ERRORS="m n" BUILD_LOG=1 || \
+          yes n | make target/compile -j1 V=s IGNORE_ERRORS=1
+          make package/compile -j$(($(nproc) + 1)) IGNORE_ERRORS=1 || make package/compile -j1 V=s IGNORE_ERRORS=1
           make package/index
-
-      - name: Get Compiled Kernel Vermagic
-        run: |
-          cd "$OPENWRT_ROOT_PATH"
-          
-          BUILD_DIR_PATH="build_dir/target-${{ env.DEVICE_PLATFORM }}/linux-${{ env.DEVICE_TARGET }}_${{ env.DEVICE_SUBTARGET }}"
-          
-          KERNEL_DIR=$(find "$BUILD_DIR_PATH" -maxdepth 1 -type d -name "linux-*" | head -n 1)
-
-          if [ -z "$KERNEL_DIR" ]; then
-            echo "Ошибка: KERNEL_DIR не найдена. Ожидаемый путь: '$BUILD_DIR_PATH/linux-*'."
-            echo "Пожалуйста, проверьте содержимое '$BUILD_DIR_PATH/' для отладки:"
-            ls -R "$BUILD_DIR_PATH"/ || true
-            exit 1
-          fi
-          echo "Отладка: Обнаружена директория KERNEL_DIR: $KERNEL_DIR"
-          
-          if [ -f "$KERNEL_DIR/.vermagic" ]; then
-            echo "--- VERMAGIC из файла .vermagic (ОСНОВНОЙ) ---"
-            VERMAGIC_FROM_FILE=$(cat "$KERNEL_DIR/.vermagic")
-            echo "$VERMAGIC_FROM_FILE"
-            echo "build_vermagic=$VERMAGIC_FROM_FILE" >> "$GITHUB_OUTPUT"
-          else
-            echo "Внимание: Файл .vermagic не найден в "$KERNEL_DIR". Попытка извлечь из kmod."
-          fi
-
-          TUN_IPK_PATH="bin/targets/${{ env.DEVICE_TARGET }}/${{ env.DEVICE_SUBTARGET }}/packages"
-          TUN_IPK_FILE=$(find "$TUN_IPK_PATH" -name "kmod-tun_*.ipk" | head -n 1)
-
-          if [ -n "$TUN_IPK_FILE" ]; then
-            echo "--- VERMAGIC из kmod-tun.ko (ДОПОЛНИТЕЛЬНЫЙ) ---"
-            mkdir -p ./tmp_mod_extract/
-            
-            tar -xf "$TUN_IPK_FILE" -C ./tmp_mod_extract/
-            
-            if [ ! -f ./tmp_mod_extract/data.tar.gz ]; then
-              echo "Ошибка: data.tar.gz не найден после распаковки IPK. Проверьте структуру IPK: $TUN_IPK_FILE"
-              rm -rf ./tmp_mod_extract/
-              exit 1
-            fi
-
-            tar -xzf ./tmp_mod_extract/data.tar.gz -C ./tmp_mod_extract/
-            
-            TUN_KO=$(find ./tmp_mod_extract/ -name "tun.ko" | head -n 1)
-            
-            if [ -n "$TUN_KO" ]; then
-                VERMAGIC_STRING=""
-                if command -v modinfo &> /dev/null; then
-                    VERMAGIC_STRING=$(modinfo "$TUN_KO" | grep ^vermagic | awk '{print $2}')
-                    echo "Vermagic (через modinfo): $VERMAGIC_STRING"
-                else
-                    VERMAGIC_STRING=$(strings "$TUN_KO" | grep -oE '^5\.15\.[0-9]+[^ ]*' | head -n 1)
-                    echo "Vermagic (через strings): $VERMAGIC_STRING"
-                fi
-                
-                echo "build_vermagic_from_kmod=$VERMAGIC_STRING" >> "$GITHUB_OUTPUT"
-            else
-                echo "Внимание: tun.ko не найден внутри распакованного IPK."
-            fi
-            rm -rf ./tmp_mod_extract/ control.tar.gz data.tar.gz
-          else
-            echo "Внимание: IPK kmod-tun не найден. Невозможно извлечь vermagic из модуля. Убедитесь, что CONFIG_PACKAGE_kmod-tun=m находится в .config."
-          fi
-          
       - name: Generate Firmware
         id: generate
         run: |
-          cd "$OPENWRT_ROOT_PATH"
+          cd $OPENWRT_ROOT_PATH
           make package/install -j$(($(nproc) + 1)) || make package/install -j1 V=s
           make target/install -j$(($(nproc) + 1)) || make target/install -j1 V=s
           make json_overview_image_info
           make checksum
-          echo "::notice title=Firmware Build Summary::Firmware for ${{ env.DEVICE_NAME }} built successfully. Check bin/targets/${{ env.DEVICE_TARGET }}/${{ env.DEVICE_SUBTARGET }} for images."
-
       - name: Upload Bin To Artifact
         uses: actions/upload-artifact@v4
         with:
@@ -437,28 +457,18 @@ jobs:
       - name: Organize Files
         if: ${{ env.FIRMWARE_RELEASE == 'true' }}
         run: |
-          cd "$OPENWRT_ROOT_PATH/bin/targets/$DEVICE_TARGET/$DEVICE_SUBTARGET"
+          cd $OPENWRT_ROOT_PATH/bin/targets/$DEVICE_TARGET/$DEVICE_SUBTARGET
           rm -rf packages feeds.buildinfo profiles.json version.buildinfo
-          df -hT "$PWD"
-
-      - name: Archive Firmware Files
-        if: ${{ env.FIRMWARE_RELEASE == 'true' }}
-        run: |
-          cd "${{ env.OPENWRT_ROOT_PATH }}/bin/targets/${{ env.DEVICE_TARGET }}/${{ env.DEVICE_SUBTARGET }}"
-          zip -r "firmware-${{ env.DEVICE_NAME }}-${{ env.BUILD_DATE }}.zip" ./*
-          mv "firmware-${{ env.DEVICE_NAME }}-${{ env.BUILD_DATE }}.zip" "$GITHUB_WORKSPACE/"
-          df -hT "$PWD"
-          ls -lh "$GITHUB_WORKSPACE/"
-
+          df -hT $PWD
       - name: Deploy Files To Release
         if: ${{ env.FIRMWARE_RELEASE == 'true' }}
         uses: ncipollo/release-action@v1
         with:
           token: ${{ env.TOKEN }}
-          name: "OpenWrt Firmware - ${{ env.SOURCE_BRANCH }} (${{ env.DEVICE_TARGET }}_${{ env.DEVICE_SUBTARGET}})"
+          name: ${{ env.SOURCE_REPO }}_${{ env.SOURCE_BRANCH }}
           commit: ${{ env.CURRENT_BRANCH }}
-          tag: firmware-${{ env.SOURCE_BRANCH }}-${{ env.BUILD_DATE }}
-          artifacts: ${{ github.workspace }}/firmware-${{ env.DEVICE_NAME }}-${{ env.BUILD_DATE }}.zip
+          tag: ${{ env.SOURCE_REPO }}_${{ env.SOURCE_BRANCH }}
+          artifacts: ${{ env.OPENWRT_ROOT_PATH }}/bin/targets/${{ env.DEVICE_TARGET }}/${{ env.DEVICE_SUBTARGET }}/*
           replacesArtifacts: true
           allowUpdates: true
           prerelease: false
