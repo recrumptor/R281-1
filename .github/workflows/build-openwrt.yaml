@@ -219,13 +219,25 @@ jobs:
           # .config уже скопирован и применен в Generate Variables
 
       - name: Inject Correct Kernel Vermagic from official source
-        if: ${{ env.VERMAGIC == 'true' }} # Условие остается, хотя VERMAGIC теперь всегда 'true'
+        if: ${{ env.VERMAGIC == 'true' }}
         run: |
-          # vermagic_update.sh должен был быть скопирован rsync'ом
           cd "$OPENWRT_ROOT_PATH"
+          
+          # Скачиваем vermagic_update.sh из ветки main репозитория recrumptor/openwrt
+          # и делаем его исполняемым
+          echo "Скачивание vermagic_update.sh из https://github.com/recrumptor/openwrt/raw/main/vermagic_update.sh"
+          curl -sSLo vermagic_update.sh https://github.com/recrumptor/openwrt/raw/main/vermagic_update.sh
+          
+          if [ ! -f "vermagic_update.sh" ]; then
+            echo "Ошибка: vermagic_update.sh не удалось скачать."
+            exit 1
+          fi
+
           chmod +x ./vermagic_update.sh
           ./vermagic_update.sh ${{ env.DEVICE_TARGET }} ${{ env.DEVICE_SUBTARGET }}
         env:
+          # Этот REPO_URL здесь для vermagic_update.sh,
+          # не путать с SOURCE_URL для клонирования OpenWrt
           REPO_URL: https://downloads.openwrt.org/snapshots/
 
       - name: Load Custom Feeds
