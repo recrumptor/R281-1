@@ -11,8 +11,8 @@ uci -q batch <<-EOF >/dev/null
 
   # Configure timezone for Yekaterinburg, Russia
   set system.@system[0].zonename='Asia/Yekaterinburg'
-  set system.@system[0].timezone='EKT-5' # ЕКТ (Екатеринбургское время) - это UTC+5
-
+  set system.@system[0].timezone='UTC-5'
+  
   # Configure NTP servers
   del system.ntp.server
   add_list system.ntp.server='ru.pool.ntp.org'      # Российский NTP-пул
