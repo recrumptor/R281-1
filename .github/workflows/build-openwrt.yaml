@@ -381,9 +381,7 @@ jobs:
       - name: Load Custom Configuration And Vermagic
         run: |
           snapshot_version="${SOURCE_BRANCH#openwrt-}"
-          release_version=$(curl -s https://api.github.com/repos/openwrt/openwrt/tags \
-            | grep -m1 -oE "\"name\":\s*\"v${snapshot_version}\.[^\"]+\"" \
-            | cut -d'"' -f4 | sed 's/^v//')
+          release_version="${SOURCE_BRANCH#openwrt-}"
           if [[ "$CONFIG_LINK" == "true" && -n "$CONFIG_URL" ]]; then
             curl -s $CONFIG_URL -o $OPENWRT_ROOT_PATH/.config
           else
