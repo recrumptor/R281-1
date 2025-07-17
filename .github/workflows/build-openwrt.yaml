@@ -324,12 +324,34 @@ jobs:
         run: |
           cd "$OPENWRT_ROOT_PATH"
           echo -e "$(nproc) Thread Compile"
+          
+          # make clean уже вызывается, но можно продублировать
           make clean
+          
+          # Отключаем parallelism временно, если ошибка не исчезает,
+          # чтобы получить более четкий лог.
+          # Используем V=sc для максимально подробного вывода.
+          # Добавляем make tools/compile и make toolchain/compile явно
+          # для проверки, собираются ли они вообще.
+          
+          echo "Начинаем сборку инструментов и toolchain..."
+          make tools/compile V=sc || { echo "Ошибка при сборке tools/compile"; exit 1; }
+          make toolchain/compile V=sc || { echo "Ошибка при сборке toolchain/compile"; exit 1; }
+
+          echo "Проверка PATH после сборки toolchain:"
+          echo "$PATH"
+          echo "Проверка содержимого staging_dir/host/bin и staging_dir/toolchain*/bin/:"
+          ls -l "$OPENWRT_ROOT_PATH/staging_dir/host/bin/" || true
+          ls -l "$OPENWRT_ROOT_PATH/staging_dir/"*/bin/ || true
+          
+          echo "Начинаем компиляцию ядра и пакетов..."
           make buildinfo
           make diffconfig buildversion feedsversion
-          make target/compile -j$(($(nproc) + 1)) IGNORE_ERRORS="m n" BUILD_LOG=1 || \
-          yes n | make target/compile -j1 V=s IGNORE_ERRORS=1
-          make package/compile -j$(($(nproc) + 1)) IGNORE_ERRORS=1 || make package/compile -j1 V=s IGNORE_ERRORS=1
+          
+          # Компилируем целевой образ и пакеты с подробным выводом V=sc
+          # Убираем IGNORE_ERRORS временно, чтобы не пропускать важные ошибки
+          make target/compile V=sc || { echo "Ошибка при make target/compile"; exit 1; }
+          make package/compile V=sc || { echo "Ошибка при make package/compile"; exit 1; }
           make package/index
 
       - name: Get Compiled Kernel Vermagic
