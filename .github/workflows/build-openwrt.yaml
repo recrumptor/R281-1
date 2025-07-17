@@ -18,7 +18,7 @@ on:
         options:
           - openwrt-23.05.5
           - openwrt-23.05
-          - openwrt-24.10
+          - openwrt-24.10.2
       config_file:
         description: "Config Name"
         type: choice
@@ -56,11 +56,11 @@ on:
       vermagic:
         description: "Replace Vermagic"
         type: boolean
-        default: false
+        default: true
       vermagic_opt:
         description: "Use SNAPSHOT Vermagic"
         type: boolean
-        default: true
+        default: false
 
 env:
   SOURCE_URL: https://github.com/recrumptor/openwrt
