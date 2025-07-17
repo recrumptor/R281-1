@@ -43,18 +43,20 @@ on:
         description: "Firmware Release"
         type: boolean
         default: false
-      toolchain_release:
-        description: "Toolchain Release"
-        type: boolean
-        default: true
-      toolchain_rebuild:
-        description: "Force Rebuild Toolchain"
-        type: boolean
-        default: false
+      # toolchain_release, toolchain_rebuild, vermagic больше не нужны,
+      # так как toolchain не кэшируется и vermagic обновляется всегда
+      # toolchain_release:
+      #   description: "Toolchain Release"
+      #   type: boolean
+      #   default: true
+      # toolchain_rebuild:
+      #   description: "Force Rebuild Toolchain"
+      #   type: boolean
+      #   default: false
       vermagic:
         description: "Inject official kernel vermagic for kmod compatibility"
         type: boolean
-        default: true
+        default: true # Vermagic всегда будем использовать, так как toolchain не кэшируется
 
 env:
   SOURCE_URL: https://github.com/recrumptor/openwrt # URL репозитория OpenWrt для клонирования
@@ -67,34 +69,28 @@ env:
   CONFIG_URL: ${{ github.event.inputs.config_url }}
   DIY_SH: ${{ github.event.inputs.diy }}
   FIRMWARE_RELEASE: ${{ github.event.inputs.firmware_release }}
-  TOOLCHAIN_RELEASE: ${{ github.event.inputs.toolchain_release }}
-  TOOLCHAIN_REBUILD: ${{ github.event.inputs.toolchain_rebuild }}
+  # TOOLCHAIN_RELEASE: ${{ github.event.inputs.toolchain_release }} # Удалено
+  # TOOLCHAIN_REBUILD: ${{ github.event.inputs.toolchain_rebuild }} # Удалено
   VERMAGIC: ${{ github.event.inputs.vermagic }}
   TOKEN: ${{ secrets.GITHUB_TOKEN }}
   TZ: UTC
+  BUILD_ROOT_DIR: openwrt_source # Новая директория для клонирования OpenWrt
 
 jobs:
-  Toolchain:
-    name: Build OpenWrt Toolchain
-    runs-on: ubuntu-22.04
-    outputs:
-      OPENWRT_ROOT_PATH: ${{ steps.clone_openwrt.outputs.OPENWRT_ROOT_PATH }}
-      SOURCE_OWNER: ${{ steps.env.outputs.SOURCE_OWNER }}
-      SOURCE_REPO: ${{ steps.env.outputs.SOURCE_REPO }}
-      CURRENT_BRANCH: ${{ steps.env.outputs.CURRENT_BRANCH }}
-      DEVICE_NAME: ${{ steps.env.outputs.DEVICE_NAME }}
-      DEVICE_PLATFORM: ${{ steps.env.outputs.DEVICE_PLATFORM }}
-      DEVICE_TARGET: ${{ steps.env.outputs.DEVICE_TARGET }}
-      DEVICE_SUBTARGET: ${{ steps.env.outputs.DEVICE_SUBTARGET }}
-      TOOLCHAIN_IMAGE: ${{ steps.env.outputs.TOOLCHAIN_IMAGE }}
-      BUILD_DATE: ${{ steps.env.outputs.BUILD_DATE }}
-      REBUILD_CHECK: ${{ steps.hash.outputs.REBUILD_CHECK }}
+  # Джоба Toolchain удалена полностью
+  # Toolchain:
+  #   ... (удалено)
+
+  Build:
+    name: Build OpenWrt Firmware
+    # needs: [Toolchain] # Больше не зависит от джобы Toolchain
+    runs-on: ubuntu-22.04 # Используем ubuntu-22.04, как было у вас, хотя в примере 24.04
 
     steps:
       - name: Initialize Environment
         run: |
           sudo timedatectl set-timezone "$TZ"
-          mkdir -p workspace
+          mkdir -p workspace # Создаем рабочую директорию
           df -hT
           ulimit -n 8192
 
@@ -110,10 +106,10 @@ jobs:
           remove-codeql: 'true'
           remove-docker-images: 'true'
 
-      - name: Checkout Your Repository (to access R281-1 and openwrt directories)
+      - name: Checkout Your Repository (for scripts and configs)
         uses: actions/checkout@v4
-        # Если имя вашего репозитория - "R281-1", то его содержимое будет прямо в ${{ github.workspace }}/
-        # Не указываем 'path' так как по умолчанию клонируется в текущий рабочий каталог ($GITHUB_WORKSPACE)
+        # Этот шаг клонирует ваш репозиторий (с feeds.sh, diy_vX.sh, config/, vermagic_update.sh)
+        # в $GITHUB_WORKSPACE. Отсюда мы будем копировать файлы в склонированный OpenWrt.
 
       - name: "Debug: List contents after checkout"
         run: |
@@ -126,25 +122,46 @@ jobs:
           DEBIAN_FRONTEND: noninteractive
         run: |
           sudo -E apt-get -qq update
-          sudo -E apt-get -qq install -y kmod $(curl -fsSL https://pastebin.com/raw/y5mk4S1a)
+          # Устанавливаем зависимости. curl необходим для скачивания списка зависимостей.
+          # kmod тут остается, так как он может быть в списке зависимостей.
+          # squashfs-tools тоже можно оставить, может пригодиться для других операций,
+          # но для распаковки toolchain больше не нужен.
+          sudo -E apt-get -qq install -y $(curl -fsSL https://pastebin.com/raw/y5mk4S1a)
           sudo -E apt-get -qq autoremove --purge
           sudo -E apt-get -qq clean
           df -hT
-
+          # Строки про modprobe overlay удалены, т.к. overlayfs больше не используется
+          
       - name: Clone OpenWrt Source Code
         id: clone_openwrt
         run: |
-          git clone --single-branch "$SOURCE_URL" -b "$SOURCE_BRANCH" workspace/openwrt
-          cd workspace/openwrt
+          # Клонируем OpenWrt в директорию внутри workspace
+          git clone --single-branch "$SOURCE_URL" -b "$SOURCE_BRANCH" workspace/$BUILD_ROOT_DIR
+          
+          cd workspace/$BUILD_ROOT_DIR
           git config --global user.name "github-actions"
           git config --global user.email "github-actions@github.com"
-          git remote add upstream "$SOURCE_ORIGIN"
+          git remote add upstream "$SOURCE_ORIGIN" || true # Добавляем upstream, если еще нет
           git fetch upstream "$SOURCE_BRANCH"
           git merge upstream/"$SOURCE_BRANCH"
-          echo "OPENWRT_ROOT_PATH=$PWD" >> "$GITHUB_ENV"
-          echo "OPENWRT_ROOT_PATH=$PWD" >> "$GITHUB_OUTPUT"
+
+          # Устанавливаем OPENWRT_ROOT_PATH на склонированный OpenWrt
+          echo "OPENWRT_ROOT_PATH=$(realpath .)" >> "$GITHUB_ENV"
+          echo "OpenWrt source cloned to $OPENWRT_ROOT_PATH"
           
-      - name: Generate Variables
+      - name: Copy Builder Files into OpenWrt Source (using rsync as in example)
+        run: |
+          # Копируем содержимое вашего репозитория (скрипты, конфиги, vermagic_update.sh)
+          # в склонированный репозиторий OpenWrt.
+          # Исключаем .git, workspace/ и саму директорию OpenWrt, чтобы не скопировать лишнее.
+          rsync -avq --exclude=".git/" --exclude="workspace/" --exclude="$BUILD_ROOT_DIR/" "${{ github.workspace }}/" "$OPENWRT_ROOT_PATH/"
+          
+          # Отладочный вывод, чтобы убедиться, что файлы скопировались
+          echo "--- Contents of $OPENWRT_ROOT_PATH/ after rsync ---"
+          ls -F "$OPENWRT_ROOT_PATH/"
+          echo "--- End of Contents ---"
+
+      - name: Generate Variables (Moved from Toolchain Job, adjusted)
         id: env
         run: |
           export SOURCE_OWNER=$(echo "$SOURCE_URL" | awk -F '/' '{print $(NF-1)}')
@@ -159,10 +176,13 @@ jobs:
           echo "CURRENT_BRANCH=$CURRENT_BRANCH" >> "$GITHUB_ENV"
           echo "CURRENT_BRANCH=$CURRENT_BRANCH" >> "$GITHUB_OUTPUT"
           
+          # Копируем .config, теперь он должен быть в ${{ github.workspace }}/config/
           if [[ "$CONFIG_LINK" == "true" && -n "$CONFIG_URL" ]]; then
             curl -s "$CONFIG_URL" -o ".config"
           else
-            cp "${{ github.workspace }}/config/$CONFIG_FILE" ".config"
+            # Предполагаем, что config/ находится в корне вашего репозитория,
+            # и он был скопирован rsync'ом в $OPENWRT_ROOT_PATH
+            cp "config/$CONFIG_FILE" ".config"
           fi
           make defconfig
           
@@ -179,257 +199,38 @@ jobs:
           echo "DEVICE_SUBTARGET=$DEVICE_SUBTARGET" >> "$GITHUB_ENV"
           echo "DEVICE_SUBTARGET=$DEVICE_SUBTARGET" >> "$GITHUB_OUTPUT"
           
-          export TOOLCHAIN_IMAGE="toolchain-$SOURCE_OWNER-$SOURCE_REPO-$SOURCE_BRANCH-$DEVICE_TARGET-$DEVICE_SUBTARGET"
-          echo "TOOLCHAIN_IMAGE=$TOOLCHAIN_IMAGE" >> "$GITHUB_ENV"
-          echo "TOOLCHAIN_IMAGE=$TOOLCHAIN_IMAGE" >> "$GITHUB_OUTPUT"
-          
+          # TOOLCHAIN_IMAGE и CURRENT_HASH больше не используются для кэширования
+          # Но BUILD_DATE все еще полезен
           export BUILD_DATE=$(date +"%Y-%m-%d-%H%M")
           echo "BUILD_DATE=$BUILD_DATE" >> "$GITHUB_ENV"
           echo "BUILD_DATE=$BUILD_DATE" >> "$GITHUB_OUTPUT"
           
-      - name: Get Release Hash
-        continue-on-error: true
-        uses: robinraju/release-downloader@v1.12
-        with:
-          token: ${{ env.TOKEN }}
-          repository: ${{ GITHUB.REPOSITORY }}
-          fileName: ${{ env.TOOLCHAIN_IMAGE }}.hash
-          tag: toolchain
-          out-file-path: .
+          # REBUILD_CHECK тоже больше не нужен, т.к. всегда будет полная сборка toolchain
+          # echo "REBUILD_CHECK=true" >> "$GITHUB_OUTPUT" # Это можно удалить
 
-      - name: Compare Toolchain Hash
-        id: hash
-        run: |
-          if [ -f "${{ env.TOOLCHAIN_IMAGE }}.hash" ]; then
-            export CACHE_HASH=$(cat "${{ env.TOOLCHAIN_IMAGE }}.hash")
-            echo "Cached hash is $CACHE_HASH"
-          else
-            echo "No cached hash found"
-          fi
-          cd "$OPENWRT_ROOT_PATH"
-          export CURRENT_HASH=$(git log --pretty=tformat:"%H" -n1 tools toolchain)
-          echo "CURRENT_HASH=$CURRENT_HASH" >> "$GITHUB_ENV"
-          echo "CURRENT_HASH is $CURRENT_HASH"
-          if [ -z "$CACHE_HASH" ] || [ "$CURRENT_HASH" != "$CACHE_HASH" ] || [ "${{ env.TOOLCHAIN_REBUILD }}" == "true" ]; then
-            echo "REBUILD_CHECK=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "REBUILD_CHECK=false" >> "$GITHUB_OUTPUT"
-          fi
+      # Шаги Get Release Hash, Compare Toolchain Hash, Install Feeds (Toolchain),
+      # Compile Tools, Compile Toolchain, Generate Toolchain Image, Upload Toolchain Image To Artifact,
+      # Delete Old Toolchain Assets From Release, Upload Toolchain Image To Release - УДАЛЕНЫ
+      # Они были частью джобы Toolchain и больше не нужны.
 
-      - name: Install Feeds (Toolchain)
-        if: ${{ steps.hash.outputs.REBUILD_CHECK == 'true' }}
-        run: |
-          echo "Install Feeds Toolchain"
-          cd "$OPENWRT_ROOT_PATH"
-          ./scripts/feeds clean
-          ./scripts/feeds update -a
-          ./scripts/feeds install -a
-
-      - name: Compile Tools
-        if: ${{ steps.hash.outputs.REBUILD_CHECK == 'true' }}
+      - name: Load Custom Configuration # Этот шаг частично объединен с Generate Variables выше, но оставляем для ясности
         run: |
           cd "$OPENWRT_ROOT_PATH"
-          echo -e "$(nproc) Thread Compile"
-          make tools/compile -j$(($(nproc) + 1)) || make tools/compile -j1 V=s
-
-      - name: Compile Toolchain
-        if: ${{ steps.hash.outputs.REBUILD_CHECK == 'true' }}
-        run: |
-          cd "$OPENWRT_ROOT_PATH"
-          echo -e "$(nproc) Thread Compile"
-          make toolchain/compile -j$(($(nproc) + 1)) || make toolchain/compile -j1 V=s
-          rm -rf .config* dl bin
-
-      - name: Generate Toolchain Image
-        if: ${{ steps.hash.outputs.REBUILD_CHECK == 'true' }}
-        run: |
-          cd workspace
-          mksquashfs openwrt "$TOOLCHAIN_IMAGE" -force-gid 1001 -force-uid 1001 -comp zstd -Xcompression-level 19
-          mkdir -p "$GITHUB_WORKSPACE/output"
-          split -d -b 1G "$TOOLCHAIN_IMAGE" "$GITHUB_WORKSPACE/output/$TOOLCHAIN_IMAGE.img."
-          rm -f "$TOOLCHAIN_IMAGE"
-          cd "$OPENWRT_ROOT_PATH"
-          echo "$CURRENT_HASH" > "$GITHUB_WORKSPACE/output/$TOOLCHAIN_IMAGE.hash"
-          ls -lh "$GITHUB_WORKSPACE/output"
-          echo "::notice title=Toolchain Build Summary::Toolchain for branch ${{ env.SOURCE_BRANCH }}, target ${{ env.DEVICE_TARGET }}/${{ env.DEVICE_SUBTARGET }} built successfully. Image: ${{ env.TOOLCHAIN_IMAGE }}.img."
-
-      - name: Upload Toolchain Image To Artifact
-        if: ${{ env.TOOLCHAIN_RELEASE != 'true' && steps.hash.outputs.REBUILD_CHECK == 'true' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ env.TOOLCHAIN_IMAGE }}
-          path: output
-          retention-days: 7
-
-      - name: Delete Old Toolchain Assets From Release
-        if: ${{ env.TOOLCHAIN_RELEASE == 'true' && steps.hash.outputs.REBUILD_CHECK == 'true' }}
-        uses: mknejp/delete-release-assets@v1
-        with:
-          token: ${{ env.TOKEN }}
-          tag: toolchain
-          assets: ${{ env.TOOLCHAIN_IMAGE }}.*
-          fail-if-no-assets: false
-          fail-if-no-release: false
-
-      - name: Upload Toolchain Image To Release
-        if: ${{ env.TOOLCHAIN_RELEASE == 'true' && steps.hash.outputs.REBUILD_CHECK == 'true' }}
-        uses: ncipollo/release-action@v1
-        with:
-          token: ${{ env.TOKEN }}
-          name: "OpenWrt Toolchain - ${{ env.SOURCE_BRANCH }} (${{ env.DEVICE_TARGET }}_${{ env.DEVICE_SUBTARGET}})"
-          commit: ${{ env.CURRENT_BRANCH }}
-          tag: toolchain
-          artifacts: output/*
-          replacesArtifacts: true
-          allowUpdates: true
-          prerelease: true
-          body: |
-            OpenWrt Toolchain Release
-            Branch: ${{ env.SOURCE_BRANCH }}
-            Target: ${{ env.DEVICE_TARGET }}/${{ env.DEVICE_SUBTARGET }}
-            Hash: ${{ env.CURRENT_HASH }}
-            Build Date: ${{ env.BUILD_DATE }}
-
-  Build:
-    needs: [Toolchain]
-    runs-on: ubuntu-22.04
-
-    steps:
-      - name: Initialize Environment
-        run: |
-          sudo timedatectl set-timezone "$TZ"
-          mkdir -p workspace
-          df -hT
-          ulimit -n 8192
-
-      - name: Restore Variables
-        run: |
-          echo "OPENWRT_ROOT_PATH=${{ needs.Toolchain.outputs.OPENWRT_ROOT_PATH }}" >> "$GITHUB_ENV"
-          echo "SOURCE_OWNER=${{ needs.Toolchain.outputs.SOURCE_OWNER }}" >> "$GITHUB_ENV"
-          echo "SOURCE_REPO=${{ needs.Toolchain.outputs.SOURCE_REPO }}" >> "$GITHUB_ENV"
-          echo "CURRENT_BRANCH=${{ needs.Toolchain.outputs.CURRENT_BRANCH }}" >> "$GITHUB_ENV"
-          echo "DEVICE_NAME=${{ needs.Toolchain.outputs.DEVICE_NAME }}" >> "$GITHUB_ENV"
-          echo "DEVICE_PLATFORM=${{ needs.Toolchain.outputs.DEVICE_PLATFORM }}" >> "$GITHUB_ENV"
-          echo "DEVICE_TARGET=${{ needs.Toolchain.outputs.DEVICE_TARGET }}" >> "$GITHUB_ENV"
-          echo "DEVICE_SUBTARGET=${{ needs.Toolchain.outputs.DEVICE_SUBTARGET }}" >> "$GITHUB_ENV"
-          echo "TOOLCHAIN_IMAGE=${{ needs.Toolchain.outputs.TOOLCHAIN_IMAGE }}" >> "$GITHUB_ENV"
-          echo "BUILD_DATE=${{ needs.Toolchain.outputs.BUILD_DATE }}" >> "$GITHUB_ENV"
-          echo "REBUILD_CHECK=${{ needs.Toolchain.outputs.REBUILD_CHECK }}" >> "$GITHUB_ENV"
-
-      - name: Maximize Build Space
-        uses: easimon/maximize-build-space@master
-        with:
-          root-reserve-mb: '4096'
-          temp-reserve-mb: '2048'
-          swap-size-mb: '2048'
-          remove-dotnet: 'true'
-          remove-android: 'true'
-          remove-haskell: 'true'
-          remove-codeql: 'true'
-          remove-docker-images: 'true'
-
-      - name: Checkout Your Repository (to access R281-1 and openwrt directories)
-        uses: actions/checkout@v4
-
-      - name: "Debug: List contents after checkout (Build Job)"
-        run: |
-          echo "--- Contents of ${{ github.workspace }}/ (Build Job) ---"
-          ls -RF "${{ github.workspace }}"
-          echo "--- End of Contents ---"
-
-      - name: Install Packages # ИЗМЕНЕНО: добавлена строка для modprobe overlay
-        env:
-          DEBIAN_FRONTEND: noninteractive
-        run: |
-          sudo -E apt-get -qq update
-          sudo -E apt-get -qq install -y kmod $(curl -fsSL https://pastebin.com/raw/y5mk4S1a)
-          sudo -E apt-get -qq autoremove --purge
-          sudo -E apt-get -qq clean
-          sudo modprobe overlay # <--- ДОБАВЛЕНА ЭТА СТРОКА
-          df -hT
-
-      - name: Download Toolchain Image From Artifact
-        if: ${{ env.TOOLCHAIN_RELEASE != 'true' }}
-        uses: actions/download-artifact@v4
-        with:
-          name: ${{ env.TOOLCHAIN_IMAGE }}
-          path: workspace
-
-      - name: Download Toolchain Image From Release
-        if: ${{ env.TOOLCHAIN_RELEASE == 'true' }}
-        uses: robinraju/release-downloader@v1.12
-        with:
-          token: ${{ env.TOKEN }}
-          repository: ${{ GITHUB.REPOSITORY }}
-          fileName: ${{ env.TOOLCHAIN_IMAGE }}.img.*
-          tag: toolchain
-          out-file-path: workspace
-
-      - name: Prepare Toolchain Image for Build
-        run: |
-          cd workspace
-          for i in {00..09}; do
-            if [ -f "$TOOLCHAIN_IMAGE.img.$i" ]; then
-              cat "$TOOLCHAIN_IMAGE.img.$i" >> "$TOOLCHAIN_IMAGE.img"
-              rm -f "$TOOLCHAIN_IMAGE.img.$i"
-            fi
-          done
-          mkdir -p openwrt-ro # Директория только для чтения для монтирования образа
-          mkdir -p openwrt_mount_point # Точка монтирования для образа
-          mkdir -p openwrt_build_source # Новая директория для исходников, куда будем копировать из монтированной
-          
-          # Монтируем образ в openwrt_mount_point
-          sudo mount -o loop "$TOOLCHAIN_IMAGE.img" openwrt-ro
-          sudo mount -t overlay overlay -o lowerdir=openwrt-ro,upperdir=overlay_upper,workdir=overlay_work openwrt_mount_point
-          
-          # Копируем содержимое смонтированного образа в новую директорию для сборки
-          cp -a openwrt_mount_point/. openwrt_build_source/
-          
-          # Размонтируем все, что связано с образом
-          sudo umount openwrt_mount_point
-          sudo umount openwrt-ro
-          rm -rf openwrt-ro overlay_upper overlay_work # Удаляем временные каталоги для оверлея
-          
-          # Теперь OPENWRT_ROOT_PATH указывает на новую директорию, в которой будем работать
-          echo "OPENWRT_ROOT_PATH=$(realpath openwrt_build_source)" >> "$GITHUB_ENV"
-          echo "Toolchain prepared and copied to $(realpath openwrt_build_source)"
-          
-      - name: Update Source Code (in new directory)
-        run: |
-          cd "$OPENWRT_ROOT_PATH"
-          git config --global user.name "github-actions"
-          git config --global user.email "github-actions@github.com"
-          git remote add origin "$SOURCE_URL" || true # Добавляем origin, если еще нет
-          git remote add upstream "$SOURCE_ORIGIN" || true # Добавляем upstream, если еще нет
-          git fetch origin "$SOURCE_BRANCH"
-          git merge origin/"$SOURCE_BRANCH"
-          git fetch upstream "$SOURCE_BRANCH"
-          git merge upstream/"$SOURCE_BRANCH"
-
-      - name: Load Custom Configuration
-        run: |
-          cd "$OPENWRT_ROOT_PATH"
-          if [[ "$CONFIG_LINK" == "true" && -n "$CONFIG_URL" ]]; then
-            curl -s "$CONFIG_URL" -o ".config"
-          else
-            cp "${{ github.workspace }}/config/$CONFIG_FILE" ".config"
-          fi
-          make defconfig
+          # .config уже скопирован и применен в Generate Variables
 
       - name: Inject Correct Kernel Vermagic from official source
-        if: ${{ env.VERMAGIC == 'true' }}
+        if: ${{ env.VERMAGIC == 'true' }} # Условие остается, хотя VERMAGIC теперь всегда 'true'
         run: |
-          cp "${{ github.workspace }}/vermagic_update.sh" "$OPENWRT_ROOT_PATH/vermagic_update.sh"
+          # vermagic_update.sh должен был быть скопирован rsync'ом
           cd "$OPENWRT_ROOT_PATH"
           chmod +x ./vermagic_update.sh
           ./vermagic_update.sh ${{ env.DEVICE_TARGET }} ${{ env.DEVICE_SUBTARGET }}
         env:
-          # Можно указать явно URL снапшотов OpenWrt, если нужно отличное от downloads.openwrt.org
-          REPO_URL: https://downloads.openwrt.org/snapshots/ 
+          REPO_URL: https://downloads.openwrt.org/snapshots/
 
       - name: Load Custom Feeds
         run: |
-          cp "${{ github.workspace }}/scripts/$FEEDS_SH" "$OPENWRT_ROOT_PATH/$FEEDS_SH"
+          # feeds.sh должен был быть скопирован rsync'ом
           cd "$OPENWRT_ROOT_PATH"
           chmod +x "./$FEEDS_SH" && "./$FEEDS_SH"
 
@@ -462,7 +263,8 @@ jobs:
               exit 1
           fi
 
-          cp "${{ github.workspace }}/scripts/$FEEDS_PKG_SH" "$OPENWRT_ROOT_PATH/$FEEDS_PKG_SH"
+          # feeds_pkg.sh должен был быть скопирован rsync'ом
+          cp "${{ github.workspace }}/scripts/$FEEDS_PKG_SH" "$OPENWRT_ROOT_PATH/$FEEDS_PKG_SH" # Это не нужно, если rsync копирует scripts/
           chmod +x "./$FEEDS_PKG_SH" && "./$FEEDS_PKG_SH"
 
           ./scripts/feeds install -a V=s
@@ -477,11 +279,14 @@ jobs:
 
       - name: Load DIY
         run: |
-          cp "${{ github.workspace }}/scripts/$DIY_SH" "$OPENWRT_ROOT_PATH/$DIY_SH"
+          # diy_vX.sh должен был быть скопирован rsync'ом
+          # cp "${{ github.workspace }}/scripts/$DIY_SH" "$OPENWRT_ROOT_PATH/$DIY_SH" # Это не нужно, если rsync копирует scripts/
           
-          if [ -d "${{ github.workspace }}/custom" ]; then
-            mv "${{ github.workspace }}/custom" "$OPENWRT_ROOT_PATH/custom"
-          fi
+          # Если директория 'custom' есть в вашем репозитории, rsync ее скопирует.
+          # Этот блок можно удалить, если custom/ всегда будет в корне OpenWrt
+          # if [ -d "${{ github.workspace }}/custom" ]; then
+          #   mv "${{ github.workspace }}/custom" "$OPENWRT_ROOT_PATH/custom"
+          # fi
           
           cd "$OPENWRT_ROOT_PATH"
           chmod +x "./$DIY_SH" && "./$DIY_SH"
@@ -490,7 +295,7 @@ jobs:
         id: download
         run: |
           cd "$OPENWRT_ROOT_PATH"
-          make download -j10 || make download -j10 V=s
+          make download -j$(($(nproc) + 1)) || make download -j1 V=s # Используем (nproc)+1 для более эффективного использования ядер
           find dl -size -1024c -exec ls -l {} \;
           find dl -size -1024c -exec rm -f {} \;
 
@@ -502,7 +307,7 @@ jobs:
           make buildinfo
           make diffconfig buildversion feedsversion
           make target/compile -j$(($(nproc) + 1)) IGNORE_ERRORS="m n" BUILD_LOG=1 || \
-          yes n | make target/compile -j1 V=s IGNORE_ERRORS=1
+          yes n | make target/compile -j1 V=s IGNORE_ERRORS=1 # Сделал более устойчивым к ошибкам, как вы раньше просили
           make package/compile -j$(($(nproc) + 1)) IGNORE_ERRORS=1 || make package/compile -j1 V=s IGNORE_ERRORS=1
           make package/index
 
