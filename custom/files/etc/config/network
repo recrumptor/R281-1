@@ -37,8 +37,3 @@ config interface 'wwan'
 	option ipv6 'auto'
 	option delay '8'
 	option metric '30'
-
-config interface 'openvpn'
-	option proto 'none'
-	option device 'tun0'
-	option metric '10'
