@@ -21,22 +21,10 @@ config zone
 	option masq '1'
 	option mtu_fix '1'
 
-config zone
-	option name 'vpn'
-	list network 'openvpn'
-	option input 'REJECT'
-	option output 'ACCEPT'
-	option forward 'REJECT'
-	option masq '1'
-	option mtu_fix '1'
-
 config forwarding
 	option src 'lan'
 	option dest 'wan'
 
-config forwarding
-	option src 'lan'
-	option dest 'vpn'
 
 config rule
 	option name 'Allow-DHCP-Renew'
