@@ -1,5 +1,5 @@
 config defaults
-	option input 'ACCEPT'
+	option input 'REJECT'
 	option output 'ACCEPT'
 	option forward 'REJECT'
 	option synflood_protect '1'
