@@ -221,37 +221,58 @@ jobs:
             echo "REBUILD_CHECK=true" >> $GITHUB_OUTPUT
           fi
       - name: Install Feeds
-        if: ${{ env.REBUILD_CHECK == 'true' || env.TOOLCHAIN_REBUILD == 'true' }}
+        if: ${{ env.REBUILD_CHECK == 'true' }}
         run: |
           echo "Install Feeds Toolchain"
           cd "$OPENWRT_ROOT_PATH"
           ./scripts/feeds clean
-          RETRIES=3
+
+          RETRIES=4
           for i in $(seq 1 $RETRIES); do
-            ./scripts/feeds update -a && break || {
-              echo "Feeds update failed, retrying ($i/$RETRIES)..."
-              sleep 5
-            }
+            echo "Attempt $i to update feeds..."
+            if ./scripts/feeds update -a; then
+              echo "Feeds updated successfully."
+              break
+            else
+              echo "Feeds update failed (attempt $i/$RETRIES), retrying in 30 seconds..."
+              sleep 30
+            fi
+            if [ "$i" -eq "$RETRIES" ]; then
+              echo "Feeds update failed after $RETRIES attempts. Exiting..."
+              exit 1
+            fi
           done
+
           ./scripts/feeds install -a
 
       - name: Load Custom Configuration
-        if: ${{ env.REBUILD_CHECK == 'true' || env.TOOLCHAIN_REBUILD == 'true' }}
+        if: ${{ env.REBUILD_CHECK == 'true' }}
         run: |
           if [[ "$CONFIG_LINK" == "true" && -n "$CONFIG_URL" ]]; then
             echo "Downloading config from $CONFIG_URL"
-            RETRIES=3
+            RETRIES=4
             for i in $(seq 1 $RETRIES); do
-              curl -fsSL "$CONFIG_URL" -o "$OPENWRT_ROOT_PATH/.config" && break || {
-                echo "Download failed, retrying ($i/$RETRIES)..."
-                sleep 5
-              }
+              echo "Attempt $i to download config..."
+              HTTP_CODE=$(curl -fsSL -w "%{http_code}" -o "$OPENWRT_ROOT_PATH/.config" "$CONFIG_URL")
+              if [[ "$HTTP_CODE" == "200" ]]; then
+                echo "Download successful."
+                break
+              else
+                echo "Download failed with HTTP code $HTTP_CODE (attempt $i/$RETRIES), retrying in 30 seconds..."
+                sleep 30
+              fi
+              if [ "$i" -eq "$RETRIES" ]; then
+                echo "Failed to download config after $RETRIES attempts. Exiting..."
+                exit 1
+              fi
             done
           else
             cp "./config/$CONFIG_FILE" "$OPENWRT_ROOT_PATH/.config"
           fi
+
           cd "$OPENWRT_ROOT_PATH"
           make defconfig
+
       - name: Compile Tools
         if: ${{ env.REBUILD_CHECK == 'true' }}
         run: |
@@ -396,57 +417,45 @@ jobs:
           cd $OPENWRT_ROOT_PATH
           chmod +x ./$FEEDS_SH && ./$FEEDS_SH
       - name: Install Feeds
-        if: ${{ env.REBUILD_CHECK == 'true' }}
         run: |
-          echo "Install Feeds Toolchain"
-          cd "$OPENWRT_ROOT_PATH"
+          cp ./scripts/$FEEDS_PKG_SH $OPENWRT_ROOT_PATH/$FEEDS_PKG_SH
+          cd $OPENWRT_ROOT_PATH
           ./scripts/feeds clean
-
-          RETRIES=4
-          for i in $(seq 1 $RETRIES); do
-            echo "Attempt $i to update feeds..."
-            if ./scripts/feeds update -a; then
-              echo "Feeds updated successfully."
-              break
-            else
-              echo "Feeds update failed (attempt $i/$RETRIES), retrying in 30 seconds..."
-              sleep 30
-            fi
-            if [ "$i" -eq "$RETRIES" ]; then
-              echo "Feeds update failed after $RETRIES attempts. Exiting..."
-              exit 1
-            fi
-          done
-
+          ./scripts/feeds update -a
+          chmod +x ./$FEEDS_PKG_SH && ./$FEEDS_PKG_SH
+          ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: Load Custom Configuration
-        if: ${{ env.REBUILD_CHECK == 'true' }}
+      - name: Load Custom Configuration And Vermagic
         run: |
+          snapshot_version="${SOURCE_BRANCH#openwrt-}"
+          release_version=$(curl -s https://api.github.com/repos/openwrt/openwrt/tags \
+            | grep -m1 -oE "\"name\":\s*\"v${snapshot_version}\.[^\"]+\"" \
+            | cut -d'"' -f4 | sed 's/^v//')
           if [[ "$CONFIG_LINK" == "true" && -n "$CONFIG_URL" ]]; then
-            echo "Downloading config from $CONFIG_URL"
-            RETRIES=4
-            for i in $(seq 1 $RETRIES); do
-              echo "Attempt $i to download config..."
-              HTTP_CODE=$(curl -fsSL -w "%{http_code}" -o "$OPENWRT_ROOT_PATH/.config" "$CONFIG_URL")
-              if [[ "$HTTP_CODE" == "200" ]]; then
-                echo "Download successful."
-                break
-              else
-                echo "Download failed with HTTP code $HTTP_CODE (attempt $i/$RETRIES), retrying in 30 seconds..."
-                sleep 30
-              fi
-              if [ "$i" -eq "$RETRIES" ]; then
-                echo "Failed to download config after $RETRIES attempts. Exiting..."
-                exit 1
-              fi
-            done
+            curl -s $CONFIG_URL -o $OPENWRT_ROOT_PATH/.config
           else
-            cp "./config/$CONFIG_FILE" "$OPENWRT_ROOT_PATH/.config"
+            cp ./config/$CONFIG_FILE $OPENWRT_ROOT_PATH/.config
           fi
-
-          cd "$OPENWRT_ROOT_PATH"
+          if [[ "$VERMAGIC_OPT" == "true" ]]; then
+            version="${snapshot_version}-SNAPSHOT"
+          else
+            version="${release_version}"
+          fi
+          kmods=$(curl -s https://downloads.openwrt.org/releases/${version}/targets/${DEVICE_TARGET}/${DEVICE_SUBTARGET}/kmods/ \
+              | grep -oP '<td class="n"><a href="\K[^/]+|<td class="d">\K[^<]+' \
+              | paste -d '|' - - | sort -t '|' -k2 | head -n1 | cut -d '|' -f1)
+          echo "src/gz openwrt_kmods https://downloads.openwrt.org/releases/${version}/targets/${DEVICE_TARGET}/${DEVICE_SUBTARGET}/kmods/${kmods}" >> ./custom/files/etc/opkg/customfeeds.conf
+          cd $OPENWRT_ROOT_PATH
+          grep -q '^CONFIG_VERSION_REPO=' ./.config \
+            && sed -i "s|^CONFIG_VERSION_REPO=.*|CONFIG_VERSION_REPO=\"https://downloads.openwrt.org/releases/${version}\"|" ./.config \
+            || echo -e "\nCONFIG_VERSION_REPO=\"https://downloads.openwrt.org/releases/${version}\"" >> ./.config
+          if [[ "$VERMAGIC" == "true" ]]; then
+            echo "$kmods" | sed 's/.*-//' > .vermagic
+            sed -i -e 's/^\(.\).*vermagic$/\1cp $(TOPDIR)\/.vermagic $(LINUX_DIR)\/.vermagic/' ./include/kernel-defaults.mk
+          fi
           make defconfig
+
       - name: Upload Config To Artifact
         uses: actions/upload-artifact@v4
         with:
