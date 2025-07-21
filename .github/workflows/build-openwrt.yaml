@@ -221,7 +221,7 @@ jobs:
             echo "REBUILD_CHECK=true" >> $GITHUB_OUTPUT
           fi
       - name: Install Feeds
-        if: ${{ env.REBUILD_CHECK == 'true' }}
+        if: ${{ env.REBUILD_CHECK == 'true' || env.TOOLCHAIN_REBUILD == 'true' }}
         run: |
           echo "Install Feeds Toolchain"
           cd "$OPENWRT_ROOT_PATH"
@@ -236,7 +236,7 @@ jobs:
           ./scripts/feeds install -a
 
       - name: Load Custom Configuration
-        if: ${{ env.REBUILD_CHECK == 'true' }}
+        if: ${{ env.REBUILD_CHECK == 'true' || env.TOOLCHAIN_REBUILD == 'true' }}
         run: |
           if [[ "$CONFIG_LINK" == "true" && -n "$CONFIG_URL" ]]; then
             echo "Downloading config from $CONFIG_URL"
