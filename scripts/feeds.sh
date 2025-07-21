@@ -15,7 +15,7 @@ src-git sms_tool https://github.com/4IceG/luci-app-sms-tool-js
 # src-git xray https://github.com/yichya/luci-app-xray
 # src-git v2raya https://github.com/v2rayA/v2raya-openwrt
 # src-git zapret https://github.com/remittor/zapret-openwrt
-# src-git awg https://github.com/amnezia-vpn/awg-openwrt.git
+src-git awg https://github.com/amnezia-vpn/awg-openwrt
 EOF
 
 exit 0
