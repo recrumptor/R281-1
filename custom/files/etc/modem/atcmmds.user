@@ -1,14 +1,14 @@
-Signal Quality/Strength вћњ AT+CSQ;AT+CSQ
-Current Cell Info вћњ AT+ZCELLINFO?;AT+ZCELLINFO?
-Carrier Agregation Info вћњ AT+ZCAINFO?;AT+ZCAINFO?
-Locked Band Info вћњ AT+ZNLOCKBAND?;AT+ZNLOCKBAND?
-Band Info вћњ AT*LTEBAND?;AT*LTEBAND?
-Reboot вћњ AT+CFUN=1,1;AT+CFUN=1,1
-Factory Reset вћњ AT+RSTSET;AT+RSTSET
-Network Mode вћњ AT+ZSNT?;AT+ZSNT?
-Network (2G/3G/4G) вћњ AT+ZSNT=7,0,3;AT+ZSNT=7,0,3
-Network (3G/4G) вћњ AT+ZSNT=7,0,2;AT+ZSNT=7,0,2
-Network (4G) вћњ AT+ZSNT=6,0,0;AT+ZSNT=6,0,0
-Network (3G) вћњ AT+ZSNT=2,0,0;AT+ZSNT=2,0,0
-Network (2G) вћњ AT+ZSNT=1,0,0;AT+ZSNT=1,0,0
-LTE DHCP Lease (12h) вћњ AT+ZDHCPLEASE=43200;AT+ZDHCPLEASE=43200
+Signal Quality/Strength > AT+CSQ;AT+CSQ
+Current Cell Info > AT+ZCELLINFO?;AT+ZCELLINFO?
+Carrier Agregation Info > AT+ZCAINFO?;AT+ZCAINFO?
+Locked Band Info > AT+ZNLOCKBAND?;AT+ZNLOCKBAND?
+Band Info > AT*LTEBAND?;AT*LTEBAND?
+Reboot > AT+CFUN=1,1;AT+CFUN=1,1
+Factory Reset > AT+RSTSET;AT+RSTSET
+Network Mode > AT+ZSNT?;AT+ZSNT?
+Network (2G/3G/4G) > AT+ZSNT=7,0,3;AT+ZSNT=7,0,3
+Network (3G/4G) > AT+ZSNT=7,0,2;AT+ZSNT=7,0,2
+Network (4G) > AT+ZSNT=6,0,0;AT+ZSNT=6,0,0
+Network (3G) > AT+ZSNT=2,0,0;AT+ZSNT=2,0,0
+Network (2G) > AT+ZSNT=1,0,0;AT+ZSNT=1,0,0
+LTE DHCP Lease (12h) > AT+ZDHCPLEASE=43200;AT+ZDHCPLEASE=43200
