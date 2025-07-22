@@ -128,7 +128,9 @@
 	"notion": {
 		"initialize": [
 			"AT*APPOWERIND=0",
-			"AT+CFUN=1"
+			"AT+CFUN=1",
+			"AT+CMGF=1",
+			"AT+CNMI=2,1,0,0,0"
 		],
 		"configure": [
 			"AT+ZGDCONT=${profile},\\\"${pdptype}\\\",\\\"${apn}\\\",0",
