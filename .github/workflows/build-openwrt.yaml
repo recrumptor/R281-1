@@ -16,7 +16,7 @@ on:
         type: choice
         required: true
         options:
-          - openwrt-23.05.5
+          - openwrt-24.10.3
           - openwrt-23.05
           - openwrt-24.10.2
       config_file:
