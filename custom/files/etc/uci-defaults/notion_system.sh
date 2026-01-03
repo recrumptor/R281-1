@@ -12,6 +12,8 @@ uci -q batch <<-EOF >/dev/null
   # Configure timezone for Yekaterinburg, Russia
   set system.@system[0].zonename='Asia/Yekaterinburg'
   set system.@system[0].timezone='UTC-5'
+  set system.@system[0].zram_size_mb '58'
+   set system.@system[0].zram_comp_algo 'lz4'
   
   # Configure NTP servers
   del system.ntp.server
