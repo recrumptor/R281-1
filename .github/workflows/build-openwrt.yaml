@@ -158,17 +158,13 @@ jobs:
             echo "Applying $(basename "$p")"
             git am "$p"
           done
-      - name: Ensure tools/ninja Bootstrap Patch Is Present
+      - name: Apply CI Fixes
         run: |
           cd $OPENWRT_ROOT_PATH
-          echo "tools/ninja/patches contents before check:"
-          ls -la tools/ninja/patches/ || true
-          if ! grep -q -- '--no-rebuild' tools/ninja/patches/010-bootstrap-configure-only.patch 2>/dev/null; then
-            echo "010-bootstrap-configure-only.patch missing or broken, restoring vendored copy"
-            mkdir -p tools/ninja/patches
-            cp -f $GITHUB_WORKSPACE/patches/vendor/tools-ninja/*.patch tools/ninja/patches/
-          fi
-          ls -la tools/ninja/patches/
+          for p in $GITHUB_WORKSPACE/patches/ci-fixes/*.patch; do
+            echo "Applying $(basename "$p")"
+            git am "$p"
+          done
       - name: Generate Toolchain Configuration
         run: |
           if [[ "$CONFIG_LINK" == "true" && -n "$CONFIG_URL" ]]; then
@@ -261,17 +257,7 @@ jobs:
         run: |
           cd $OPENWRT_ROOT_PATH
           echo -e "$(nproc) Thread Compile"
-          # Guard against a stale/partial ninja build state (seen to cause
-          # 'configure.py: error: no such option: --no-rebuild' when the
-          # device-support patch chain for tools/ninja got skipped due to a
-          # leftover .prepared/.configured stamp from an earlier attempt).
-          rm -rf build_dir/host/ninja-* staging_dir/host/stamp/.ninja_* staging_dir/host/bin/ninja
-          make tools/compile -j$(($(nproc) + 1)) || {
-            echo "First attempt failed, retrying tools/ninja alone verbosely for diagnosis:"
-            rm -rf build_dir/host/ninja-* staging_dir/host/stamp/.ninja_* staging_dir/host/bin/ninja
-            make tools/ninja/{clean,compile} -j1 V=s
-            make tools/compile -j1 V=s
-          }
+          make tools/compile -j$(($(nproc) + 1)) || make tools/compile -j1 V=s
       - name: Compile Toolchain
         if: ${{ env.REBUILD_CHECK == 'true' }}
         run: |
