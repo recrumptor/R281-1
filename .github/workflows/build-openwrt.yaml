@@ -1,3 +1,4 @@
+
 #
 # Copyright (c) 2023 LENAR
 #
@@ -138,7 +139,6 @@ jobs:
           sudo -E apt-get -qq autoremove --purge
           sudo -E apt-get -qq clean
           df -hT
-
       - name: Clone Source Code
         id: clone
         run: |
@@ -155,13 +155,6 @@ jobs:
         run: |
           cd $OPENWRT_ROOT_PATH
           for p in $GITHUB_WORKSPACE/$PATCH_DIR/*.patch; do
-            echo "Applying $(basename "$p")"
-            git am "$p"
-          done
-      - name: Apply CI Fixes
-        run: |
-          cd $OPENWRT_ROOT_PATH
-          for p in $GITHUB_WORKSPACE/patches/ci-fixes/*.patch; do
             echo "Applying $(basename "$p")"
             git am "$p"
           done
@@ -252,6 +245,19 @@ jobs:
           #fi
           #cd $OPENWRT_ROOT_PATH
           #make defconfig
+      - name: Fix Ninja Configure Script
+        if: ${{ env.REBUILD_CHECK == 'true' }}
+        run: |
+          cd $OPENWRT_ROOT_PATH
+          # 1. Скачиваем и распаковываем исходники ninja заранее
+          make tools/ninja/prepare
+          
+          # 2. Вырезаем проверку флага --no-rebuild прямо из скрипта configure.py
+          NINJA_DIR=$(find build_dir/host/ -maxdepth 1 -type d -name "ninja-*")
+          if [ -f "$NINJA_DIR/configure.py" ]; then
+            sed -i '/--no-rebuild/d' "$NINJA_DIR/configure.py"
+            sed -i 's/action="store_true", help=".*no-rebuild.*/action="store_true"/g' "$NINJA_DIR/configure.py"
+          fi
       - name: Compile Tools
         if: ${{ env.REBUILD_CHECK == 'true' }}
         run: |
@@ -392,9 +398,7 @@ jobs:
         run: |
           cp ./scripts/$FEEDS_PKG_SH $OPENWRT_ROOT_PATH/$FEEDS_PKG_SH
           cd $OPENWRT_ROOT_PATH
-
           set -e
-
           try_update_feeds() {
             ./scripts/feeds clean
             ./scripts/feeds update -a
@@ -402,7 +406,6 @@ jobs:
             ./scripts/feeds update -a
             ./scripts/feeds install -a
           }
-
           max_attempts=4
           attempt=1
           until try_update_feeds; do
@@ -415,15 +418,11 @@ jobs:
               exit 1
             fi
           done
-
-
       - name: Load Custom Configuration And Vermagic
         run: |
           set -e
-
           snapshot_version="${OPENWRT_VERSION}"
           release_version="${OPENWRT_VERSION}"
-
           # Retry logic for downloading config via curl
           if [[ "$CONFIG_LINK" == "true" && -n "$CONFIG_URL" ]]; then
             echo "Downloading config from $CONFIG_URL..."
@@ -442,32 +441,24 @@ jobs:
           else
             cp ./config/$CONFIG_FILE $OPENWRT_ROOT_PATH/.config
           fi
-
           if [[ "$VERMAGIC_OPT" == "true" ]]; then
             version="${snapshot_version}-SNAPSHOT"
           else
             version="${release_version}"
           fi
-
           kmods=$(curl -s https://downloads.openwrt.org/releases/${version}/targets/${DEVICE_TARGET}/${DEVICE_SUBTARGET}/kmods/ \
             | grep -oP '<td class="n"><a href="\K[^/]+|<td class="d">\K[^<]+' \
             | paste -d '|' - - | sort -t '|' -k2 | head -n1 | cut -d '|' -f1)
-
           # echo "src/gz openwrt_kmods https://downloads.openwrt.org/releases/${version}/targets/${DEVICE_TARGET}/${DEVICE_SUBTARGET}/kmods/${kmods}" >> ./custom/files/etc/opkg/customfeeds.conf
-
           cd $OPENWRT_ROOT_PATH
-
           grep -q '^CONFIG_VERSION_REPO=' ./.config \
             && sed -i "s|^CONFIG_VERSION_REPO=.*|CONFIG_VERSION_REPO=\"https://downloads.openwrt.org/releases/${version}\"|" ./.config \
             || echo -e "\nCONFIG_VERSION_REPO=\"https://downloads.openwrt.org/releases/${version}\"" >> ./.config
-
           if [[ "$VERMAGIC" == "true" ]]; then
             echo "$kmods" | sed 's/.*-//' > .vermagic
             sed -i -e 's/^\(.\).*vermagic$/\1cp $(TOPDIR)\/.vermagic $(LINUX_DIR)\/.vermagic/' ./include/kernel-defaults.mk
           fi
-
           make defconfig
-
       - name: Upload Config To Artifact
         uses: actions/upload-artifact@v4
         with:
