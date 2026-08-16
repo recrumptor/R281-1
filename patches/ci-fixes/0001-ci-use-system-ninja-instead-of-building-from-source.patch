@@ -1,0 +1,54 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: github-actions <github-actions@github.com>
+Date: Sun, 16 Aug 2026 16:43:57 +0000
+Subject: [PATCH] ci: use system ninja instead of building from source
+
+Building tools/ninja from source via configure.py's --bootstrap and
+--no-rebuild flags has proven unreliable on some GitHub Actions
+runners: the OpenWrt-shipped patch that adds --no-rebuild to
+configure.py sometimes doesn't get applied, causing the build to
+fail with 'configure.py: error: no such option: --no-rebuild'. The
+CI apt package list already installs ninja-build, so just use that
+system binary instead of building our own copy from source.
+---
+ tools/ninja/Makefile | 20 ++++++++++----------
+ 1 file changed, 10 insertions(+), 10 deletions(-)
+
+diff --git a/tools/ninja/Makefile b/tools/ninja/Makefile
+index d79f3c5d5d..c3d7a09c40 100644
+--- a/tools/ninja/Makefile
++++ b/tools/ninja/Makefile
+@@ -10,23 +10,23 @@ PKG_HASH:=821bdff48a3f683bc4bb3b6f0b5fe7b2d647cf65d52aeb63328c91a6c6df285a
+ 
+ include $(INCLUDE_DIR)/host-build.mk
+ 
++# NOTE (Notion R281 CI): building ninja from source via configure.py's
++# --bootstrap/--no-rebuild flags has proven unreliable on some GitHub
++# Actions runners (the OpenWrt-shipped patch that adds --no-rebuild
++# sometimes doesn't get applied there for reasons we couldn't pin down).
++# ninja-build is already installed on the runner via apt, so just use
++# that instead of building our own copy from source.
++define Host/Prepare
++endef
++
+ define Host/Configure
+-	cd $(HOST_BUILD_DIR) && \
+-		$(HOST_MAKE_VARS) \
+-		CXX="$(HOSTCXX_NOCACHE)" \
+-		$(STAGING_DIR_HOST)/bin/$(PYTHON) configure.py \
+-			$(if $(shell $(STAGING_DIR_HOST)/bin/ninja --version),,--bootstrap) \
+-			--no-rebuild \
+-			--verbose
+-	-$(Host/Install)
+ endef
+ 
+ define Host/Compile
+-	+$(NINJA) -C $(HOST_BUILD_DIR)
+ endef
+ 
+ define Host/Install
+-	$(INSTALL_BIN) $(HOST_BUILD_DIR)/ninja $(STAGING_DIR_HOST)/bin/
++	$(INSTALL_BIN) $$(command -v ninja) $(STAGING_DIR_HOST)/bin/
+ endef
+ 
+ define Host/Clean
