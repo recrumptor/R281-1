@@ -245,18 +245,22 @@ jobs:
           #fi
           #cd $OPENWRT_ROOT_PATH
           #make defconfig
-      - name: Fix Ninja configure options or disable host build
-        run: |
-          cd $OPENWRT_ROOT_PATH
-          # Удаление флага --no-rebuild из Makefile пакета ninja
-          sed -i 's/--no-rebuild//g' tools/ninja/Makefile
+      
       
       - name: Compile Tools
         if: ${{ env.REBUILD_CHECK == 'true' }}
         run: |
           cd $OPENWRT_ROOT_PATH
-          echo -e "$(nproc) Thread Compile"
-          make tools/compile -j$(($(nproc) + 1)) || make tools/compile -j1 V=s
+          
+          # 1. Принудительно сбрасываем кэш и штампы сборки Ninja
+          rm -rf build_dir/host/ninja-*
+          rm -f staging_dir/host/stamp/.ninja*
+          
+          # 2. Собираем tools сразу с включенным V=s для полной прозрачности
+          make tools/ninja/compile V=s
+          
+          # 3. Дособираем остальные инструменты
+          make tools/compile -j$(($(nproc) + 1)) V=s
       - name: Compile Toolchain
         if: ${{ env.REBUILD_CHECK == 'true' }}
         run: |
