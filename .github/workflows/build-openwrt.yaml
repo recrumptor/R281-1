@@ -83,7 +83,7 @@ env:
 
 jobs:
   Toolchain:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
 
     outputs:
       OPENWRT_ROOT_PATH: ${{ steps.clone.outputs.OPENWRT_ROOT_PATH }}
@@ -101,10 +101,7 @@ jobs:
       - name: Initialize Environment
         run: |
           sudo timedatectl set-timezone "$TZ"
-          # Фикс для ошибки /usr/bin/env bash: No such file or directory
-          sudo mkdir -p /usr/bin
-          [ -f /usr/bin/env ] || sudo ln -sf /bin/env /usr/bin/env
-          [ -f /usr/bin/bash ] || sudo ln -sf /bin/bash /usr/bin/bash
+          
           mkdir -p workspace
           df -hT
           ulimit -n 8192
@@ -249,12 +246,17 @@ jobs:
           #fi
           #cd $OPENWRT_ROOT_PATH
           #make defconfig
-      - name: Patch Ninja Host Makefile
+      - name: Patch Ninja and Host Environment
         if: ${{ env.REBUILD_CHECK == 'true' }}
         run: |
           cd $OPENWRT_ROOT_PATH
-          # Вырезаем флаг --no-rebuild прямо из Makefile пакета ninja
+          # 1. Убираем удаленный флаг --no-rebuild в Makefile для ninja
           sed -i 's/--no-rebuild//g' tools/ninja/Makefile
+
+          # 2. Гарантируем корректные пути для /usr/bin/env bash (нужно для libtool)
+          mkdir -p staging_dir/host/bin
+          ln -sf $(which bash) staging_dir/host/bin/bash
+          ln -sf $(which env) staging_dir/host/bin/env
       - name: Compile Tools
         if: ${{ env.REBUILD_CHECK == 'true' }}
         run: |
@@ -312,16 +314,13 @@ jobs:
 
   Build:
     needs: [Toolchain]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
 
     steps:
       - name: Initialize Environment
         run: |
           sudo timedatectl set-timezone "$TZ"
-          # Фикс для ошибки /usr/bin/env bash: No such file or directory
-          sudo mkdir -p /usr/bin
-          [ -f /usr/bin/env ] || sudo ln -sf /bin/env /usr/bin/env
-          [ -f /usr/bin/bash ] || sudo ln -sf /bin/bash /usr/bin/bash
+          
           mkdir -p workspace
           df -hT
           ulimit -n 8192
