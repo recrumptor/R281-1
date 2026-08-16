@@ -101,6 +101,10 @@ jobs:
       - name: Initialize Environment
         run: |
           sudo timedatectl set-timezone "$TZ"
+          # Фикс для ошибки /usr/bin/env bash: No such file or directory
+          sudo mkdir -p /usr/bin
+          [ -f /usr/bin/env ] || sudo ln -sf /bin/env /usr/bin/env
+          [ -f /usr/bin/bash ] || sudo ln -sf /bin/bash /usr/bin/bash
           mkdir -p workspace
           df -hT
           ulimit -n 8192
@@ -314,6 +318,10 @@ jobs:
       - name: Initialize Environment
         run: |
           sudo timedatectl set-timezone "$TZ"
+          # Фикс для ошибки /usr/bin/env bash: No such file or directory
+          sudo mkdir -p /usr/bin
+          [ -f /usr/bin/env ] || sudo ln -sf /bin/env /usr/bin/env
+          [ -f /usr/bin/bash ] || sudo ln -sf /bin/bash /usr/bin/bash
           mkdir -p workspace
           df -hT
           ulimit -n 8192
