@@ -1,3 +1,4 @@
+
 #
 # Copyright (c) 2023 LENAR
 #
@@ -245,22 +246,22 @@ jobs:
           #fi
           #cd $OPENWRT_ROOT_PATH
           #make defconfig
-      
-      
+      - name: Bypass Host Ninja
+        if: ${{ env.REBUILD_CHECK == 'true' }}
+        run: |
+          cd $OPENWRT_ROOT_PATH
+          # 1. Создаем папку под хостовые бинарники и подкладываем системный ninja
+          mkdir -p staging_dir/host/bin
+          ln -sf $(which ninja) staging_dir/host/bin/ninja
+          
+          # 2. Исключаем сборку ninja из Makefile инструментов OpenWrt
+          sed -i 's/tools-y += ninja/# tools-y += ninja/' tools/Makefile
       - name: Compile Tools
         if: ${{ env.REBUILD_CHECK == 'true' }}
         run: |
           cd $OPENWRT_ROOT_PATH
-          
-          # 1. Принудительно сбрасываем кэш и штампы сборки Ninja
-          rm -rf build_dir/host/ninja-*
-          rm -f staging_dir/host/stamp/.ninja*
-          
-          # 2. Собираем tools сразу с включенным V=s для полной прозрачности
-          make tools/ninja/compile V=s
-          
-          # 3. Дособираем остальные инструменты
-          make tools/compile -j$(($(nproc) + 1)) V=s
+          echo -e "$(nproc) Thread Compile"
+          make tools/compile -j$(($(nproc) + 1)) || make tools/compile -j1 V=s
       - name: Compile Toolchain
         if: ${{ env.REBUILD_CHECK == 'true' }}
         run: |
