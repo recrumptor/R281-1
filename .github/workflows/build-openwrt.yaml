@@ -245,6 +245,12 @@ jobs:
           #fi
           #cd $OPENWRT_ROOT_PATH
           #make defconfig
+      - name: Fix Ninja configure options or disable host build
+        run: |
+          cd $OPENWRT_ROOT_PATH
+          # Удаление флага --no-rebuild из Makefile пакета ninja
+          sed -i 's/--no-rebuild//g' tools/ninja/Makefile
+      
       - name: Compile Tools
         if: ${{ env.REBUILD_CHECK == 'true' }}
         run: |
