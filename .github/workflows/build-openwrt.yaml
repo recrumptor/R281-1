@@ -246,17 +246,22 @@ jobs:
           #fi
           #cd $OPENWRT_ROOT_PATH
           #make defconfig
-      - name: Patch Ninja and Host Environment
+      - name: Patch Host Tools and Environment
         if: ${{ env.REBUILD_CHECK == 'true' }}
         run: |
           cd $OPENWRT_ROOT_PATH
-          # 1. Убираем удаленный флаг --no-rebuild в Makefile для ninja
+          # 1. Исправление для Ninja
           sed -i 's/--no-rebuild//g' tools/ninja/Makefile
 
-          # 2. Гарантируем корректные пути для /usr/bin/env bash (нужно для libtool)
+          # 2. Подготовка bash и env для libtool
           mkdir -p staging_dir/host/bin
+          mkdir -p staging_dir/host/stamp
           ln -sf $(which bash) staging_dir/host/bin/bash
           ln -sf $(which env) staging_dir/host/bin/env
+
+          # 3. Обход сборки проблемного tools/lzma (используем системный lzma)
+          ln -sf $(which lzma) staging_dir/host/bin/lzma
+          touch staging_dir/host/stamp/.lzma_installed
       - name: Compile Tools
         if: ${{ env.REBUILD_CHECK == 'true' }}
         run: |
