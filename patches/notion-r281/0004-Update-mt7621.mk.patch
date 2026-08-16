@@ -1,0 +1,35 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Rec <recrumptor@gmail.com>
+Date: Fri, 10 Oct 2025 20:36:59 +0500
+Subject: [PATCH 4/7] Update mt7621.mk
+
+Signed-off-by: Rec <recrumptor@gmail.com>
+---
+ target/linux/ramips/image/mt7621.mk | 14 ++++++++++++++
+ 1 file changed, 14 insertions(+)
+
+diff --git a/target/linux/ramips/image/mt7621.mk b/target/linux/ramips/image/mt7621.mk
+index f6a05db8d3..9584172531 100644
+--- a/target/linux/ramips/image/mt7621.mk
++++ b/target/linux/ramips/image/mt7621.mk
+@@ -2404,6 +2404,20 @@ define Device/openfi_5pro
+ endef
+ TARGET_DEVICES += openfi_5pro
+ 
++define Device/notion_r281
++  $(Device/nand)
++  $(Device/uimage-lzma-loader)
++  IMAGE_SIZE := 129280k
++  IMAGES += factory.bin
++  IMAGE/factory.bin := append-kernel | pad-to $$$$(KERNEL_SIZE) | append-ubi | \
++	check-size
++  DEVICE_VENDOR := Notion
++  DEVICE_MODEL := R281
++  DEVICE_PACKAGES := kmod-mt7603 kmod-mt7615e kmod-mt7663-firmware-ap \
++	kmod-usb3 kmod-usb-net-rndis comgt-ncm -uboot-envtools
++endef
++TARGET_DEVICES += notion_r281
++
+ define Device/oraybox_x3a
+   $(Device/dsa-migration)
+   $(Device/uimage-lzma-loader)

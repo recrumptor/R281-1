@@ -1,0 +1,22 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Rec <recrumptor@gmail.com>
+Date: Fri, 10 Oct 2025 20:42:04 +0500
+Subject: [PATCH 6/7] Update ramips
+
+Signed-off-by: Rec <recrumptor@gmail.com>
+---
+ package/boot/uboot-envtools/files/ramips | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/package/boot/uboot-envtools/files/ramips b/package/boot/uboot-envtools/files/ramips
+index b0f8c1c168..e9bcff3017 100644
+--- a/package/boot/uboot-envtools/files/ramips
++++ b/package/boot/uboot-envtools/files/ramips
+@@ -105,6 +105,7 @@ linksys,ea7500-v2|\
+ linksys,ea8100-v1|\
+ linksys,ea8100-v2|\
+ mts,wg430223|\
++notion,r281|\
+ ubnt,edgerouter-x|\
+ ubnt,edgerouter-x-sfp)
+ 	ubootenv_add_uci_config "/dev/mtd1" "0x0" "0x1000" "0x20000"
