@@ -1,4 +1,3 @@
-
 #
 # Copyright (c) 2023 LENAR
 #
@@ -246,25 +245,22 @@ jobs:
           #fi
           #cd $OPENWRT_ROOT_PATH
           #make defconfig
-      - name: Bypass Host Ninja
-        if: ${{ env.REBUILD_CHECK == 'true' }}
-        run: |
-          cd $OPENWRT_ROOT_PATH
-          # 1. Создаем директории для бинарников и штампов
-          mkdir -p staging_dir/host/bin
-          mkdir -p staging_dir/host/stamp
-          
-          # 2. Создаем симлинк на системный ninja
-          ln -sf $(which ninja) staging_dir/host/bin/ninja
-          
-          # 3. Ставим «штамп» для OpenWrt, что ninja уже якобы успешно скомпилирован
-          touch staging_dir/host/stamp/.ninja_installed
       - name: Compile Tools
         if: ${{ env.REBUILD_CHECK == 'true' }}
         run: |
           cd $OPENWRT_ROOT_PATH
           echo -e "$(nproc) Thread Compile"
-          make tools/compile -j$(($(nproc) + 1)) || make tools/compile -j1 V=s
+          # Guard against a stale/partial ninja build state (seen to cause
+          # 'configure.py: error: no such option: --no-rebuild' when the
+          # device-support patch chain for tools/ninja got skipped due to a
+          # leftover .prepared/.configured stamp from an earlier attempt).
+          rm -rf build_dir/host/ninja-* staging_dir/host/stamp/.ninja_* staging_dir/host/bin/ninja
+          make tools/compile -j$(($(nproc) + 1)) || {
+            echo "First attempt failed, retrying tools/ninja alone verbosely for diagnosis:"
+            rm -rf build_dir/host/ninja-* staging_dir/host/stamp/.ninja_* staging_dir/host/bin/ninja
+            make tools/ninja/{clean,compile} -j1 V=s
+            make tools/compile -j1 V=s
+          }
       - name: Compile Toolchain
         if: ${{ env.REBUILD_CHECK == 'true' }}
         run: |
