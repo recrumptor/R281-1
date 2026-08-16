@@ -158,6 +158,17 @@ jobs:
             echo "Applying $(basename "$p")"
             git am "$p"
           done
+      - name: Ensure tools/ninja Bootstrap Patch Is Present
+        run: |
+          cd $OPENWRT_ROOT_PATH
+          echo "tools/ninja/patches contents before check:"
+          ls -la tools/ninja/patches/ || true
+          if ! grep -q -- '--no-rebuild' tools/ninja/patches/010-bootstrap-configure-only.patch 2>/dev/null; then
+            echo "010-bootstrap-configure-only.patch missing or broken, restoring vendored copy"
+            mkdir -p tools/ninja/patches
+            cp -f $GITHUB_WORKSPACE/patches/vendor/tools-ninja/*.patch tools/ninja/patches/
+          fi
+          ls -la tools/ninja/patches/
       - name: Generate Toolchain Configuration
         run: |
           if [[ "$CONFIG_LINK" == "true" && -n "$CONFIG_URL" ]]; then
