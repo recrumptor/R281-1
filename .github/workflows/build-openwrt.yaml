@@ -250,12 +250,15 @@ jobs:
         if: ${{ env.REBUILD_CHECK == 'true' }}
         run: |
           cd $OPENWRT_ROOT_PATH
-          # 1. Создаем папку под хостовые бинарники и подкладываем системный ninja
+          # 1. Создаем директории для бинарников и штампов
           mkdir -p staging_dir/host/bin
+          mkdir -p staging_dir/host/stamp
+          
+          # 2. Создаем симлинк на системный ninja
           ln -sf $(which ninja) staging_dir/host/bin/ninja
           
-          # 2. Исключаем сборку ninja из Makefile инструментов OpenWrt
-          sed -i 's/tools-y += ninja/# tools-y += ninja/' tools/Makefile
+          # 3. Ставим «штамп» для OpenWrt, что ninja уже якобы успешно скомпилирован
+          touch staging_dir/host/stamp/.ninja_installed
       - name: Compile Tools
         if: ${{ env.REBUILD_CHECK == 'true' }}
         run: |
