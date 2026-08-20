@@ -239,9 +239,18 @@ jobs:
           ln -sf $(which bash) staging_dir/host/bin/bash
           ln -sf $(which env) staging_dir/host/bin/env
 
-          # 3. Обход сборки проблемного tools/lzma (используем системный lzma)
-          ln -sf $(which lzma) staging_dir/host/bin/lzma
-          touch staging_dir/host/stamp/.lzma_installed
+          # 3. tools/lzma (LZMA_Alone from the old 7-Zip SDK, needed for this
+          #    device's kernel image via Device/uimage-lzma-loader) fails to
+          #    compile on newer Ubuntu/gcc because gcc now treats
+          #    -Wformat-security as an error by default, and this ~2007
+          #    C/C++ code calls printf() with a non-literal format string.
+          #    NOTE: do NOT symlink the system `lzma` (xz-utils) here instead
+          #    -- it uses a completely different CLI than LZMA_Alone
+          #    (`lzma e file -lc1 -lp2 -pb2`) and would silently produce a
+          #    kernel image the bootloader can't decompress (LZMA ERROR 1 /
+          #    bricked device), not a build failure. Just relax the warning
+          #    so the real tool builds instead.
+          sed -i 's|-f makefile.gcc$|-f makefile.gcc CFLAGS="-O2 -Wall -Wno-error=format-security" CXXFLAGS="-O2 -Wall -Wno-error=format-security"|' tools/lzma/Makefile
       - name: Compile Tools
         if: ${{ env.REBUILD_CHECK == 'true' }}
         run: |
