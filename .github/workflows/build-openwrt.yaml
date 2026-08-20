@@ -1,4 +1,3 @@
-
 #
 # Copyright (c) 2023 LENAR
 #
@@ -118,7 +117,7 @@ jobs:
           remove-docker-images: 'true'
 
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install Packages
         env:
@@ -227,25 +226,6 @@ jobs:
             echo "REBUILD_CHECK=true" >> $GITHUB_ENV
             echo "REBUILD_CHECK=true" >> $GITHUB_OUTPUT
           fi
-      #- name: Install Feeds
-        #if: ${{ env.REBUILD_CHECK == 'true' }}
-        #run: |
-         # echo "Install Feeds Toolchain"
-          #cd $OPENWRT_ROOT_PATH
-          #./scripts/feeds clean
-          #./scripts/feeds update -a
-          #./scripts/feeds install -a
-
-      #- name: Load Custom Configuration
-        #if: ${{ env.REBUILD_CHECK == 'true' }}
-        #run: |
-          #if [[ "$CONFIG_LINK" == "true" && -n "$CONFIG_URL" ]]; then
-            #curl -s $CONFIG_URL -o $OPENWRT_ROOT_PATH/.config
-          #else
-            #cp ./config/$CONFIG_FILE $OPENWRT_ROOT_PATH/.config
-          #fi
-          #cd $OPENWRT_ROOT_PATH
-          #make defconfig
       - name: Patch Host Tools and Environment
         if: ${{ env.REBUILD_CHECK == 'true' }}
         run: |
@@ -288,7 +268,7 @@ jobs:
           ls -lh $GITHUB_WORKSPACE/output
       - name: Upload Toolchain Image To Artifact
         if: ${{ env.TOOLCHAIN_RELEASE != 'true' && env.REBUILD_CHECK == 'true' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ env.TOOLCHAIN_IMAGE }}
           path: output
@@ -354,7 +334,7 @@ jobs:
           remove-docker-images: 'true'
 
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install Packages
         env:
@@ -367,7 +347,7 @@ jobs:
           df -hT
       - name: Download Toolchain Image From Artifact
         if: ${{ env.TOOLCHAIN_RELEASE != 'true' }}
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: ${{ env.TOOLCHAIN_IMAGE }}
           path: workspace
@@ -465,7 +445,7 @@ jobs:
           fi
           make defconfig
       - name: Upload Config To Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Config
           path: ${{ env.OPENWRT_ROOT_PATH }}/.config
@@ -505,7 +485,7 @@ jobs:
           make json_overview_image_info
           make checksum
       - name: Upload Bin To Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ env.SOURCE_REPO }}-${{ env.DEVICE_NAME }}-${{ env.BUILD_DATE }}
           path: ${{ env.OPENWRT_ROOT_PATH }}/bin
