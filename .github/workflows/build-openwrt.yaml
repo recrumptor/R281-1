@@ -172,7 +172,7 @@ jobs:
           cd $OPENWRT_ROOT_PATH
           
           # Отключаем внутреннюю сборку ninja, переключая на системную
-          echo "CONFIG_PACKAGE_ninja=n" >> .config
+          # echo "CONFIG_PACKAGE_ninja=n" >> .config
           
           # Добавляем альтернативное надежное зеркало для скачивания исходников GNU
           echo 'CONFIG_LOCALMIRROR="https://sources.openwrt.org/ https://sources.immortalwrt.org/"' >> .config
@@ -237,12 +237,12 @@ jobs:
             echo "REBUILD_CHECK=true" >> $GITHUB_OUTPUT
           fi
 
-      - name: Pre-download Tools Tarballs
-        if: ${{ env.REBUILD_CHECK == 'true' }}
-        run: |
-          cd $OPENWRT_ROOT_PATH
-          make tools/download -j8 SHELL=/bin/bash || make tools/download -j1 SHELL=/bin/bash
-          find dl -size -1024c -exec rm -f {} \;
+      # - name: Pre-download Tools Tarballs
+        # if: ${{ env.REBUILD_CHECK == 'true' }}
+        # run: |
+          # cd $OPENWRT_ROOT_PATH
+          # make tools/download -j8 SHELL=/bin/bash || make tools/download -j1 SHELL=/bin/bash
+          # find dl -size -1024c -exec rm -f {} \;
 
       - name: Patch Host Tools and Environment
         
@@ -268,7 +268,8 @@ jobs:
           #    kernel image the bootloader can't decompress (LZMA ERROR 1 /
           #    bricked device), not a build failure. Just relax the warning
           #    so the real tool builds instead.
-          sed -i 's|-f makefile.gcc$|-f makefile.gcc CFLAGS="-O2 -Wall -Wno-error=format-security" CXXFLAGS="-O2 -Wall -Wno-error=format-security"|' tools/lzma/Makefile
+          # Гарантированное добавление флагов без привязки к концу строки
+          sed -i 's|makefile.gcc|makefile.gcc CFLAGS="-O2 -Wall -Wno-error=format-security" CXXFLAGS="-O2 -Wall -Wno-error=format-security"|g' tools/lzma/Makefile
  
           # 4. rules.mk sets SHELL:=/usr/bin/env bash (two words) so autotools
           #    packages get a controlled bash even on systems without one at
