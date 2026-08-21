@@ -239,27 +239,25 @@ jobs:
 
       
 
-      - name: Skip Heavy Host Tools (Use System Binaries)
+      - name: Install Feeds
+        if: ${{ env.REBUILD_CHECK == 'true' }}
         run: |
+          echo "Install Feeds Toolchain"
           cd $OPENWRT_ROOT_PATH
+          ./scripts/feeds clean
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
 
-          # Устанавливаем готовые бинарники в Ubuntu Runner
-          sudo apt-get update
-          sudo apt-get install -y ninja-build cmake bc xz-utils lzma ccache gettext
-
-          # Вырезаем сборку проблемных тяжелых утилит из главная конфигурации tools
-          for tool in ninja cmake xz bc sed tar patch m4 autoconf; do
-            sed -i "/tools-y += $tool/d" tools/Makefile
-            sed -i "/tools-.* += $tool/d" tools/Makefile
-          done
-
-          # Создаем симлинки на системные утилиты хоста
-          mkdir -p staging_dir/host/bin
-          ln -sf $(which ninja-build) staging_dir/host/bin/ninja
-          ln -sf $(which cmake) staging_dir/host/bin/cmake
-          ln -sf $(which xz) staging_dir/host/bin/xz
-          ln -sf $(which lzma) staging_dir/host/bin/lzma
-          ln -sf $(which bc) staging_dir/host/bin/bc
+      - name: Load Custom Configuration
+        if: ${{ env.REBUILD_CHECK == 'true' }}
+        run: |
+          if [[ "$CONFIG_LINK" == "true" && -n "$CONFIG_URL" ]]; then
+            curl -fsSL $CONFIG_URL -o $OPENWRT_ROOT_PATH/.config
+          else
+            cp ./config/$CONFIG_FILE $OPENWRT_ROOT_PATH/.config
+          fi
+          cd $OPENWRT_ROOT_PATH
+          make defconfig
  
       - name: Compile Tools
         if: ${{ env.REBUILD_CHECK == 'true' }}
