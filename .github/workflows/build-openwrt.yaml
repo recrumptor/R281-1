@@ -251,18 +251,30 @@ jobs:
           #    bricked device), not a build failure. Just relax the warning
           #    so the real tool builds instead.
           sed -i 's|-f makefile.gcc$|-f makefile.gcc CFLAGS="-O2 -Wall -Wno-error=format-security" CXXFLAGS="-O2 -Wall -Wno-error=format-security"|' tools/lzma/Makefile
+
+          # 4. rules.mk sets SHELL:=/usr/bin/env bash (two words) so autotools
+          #    packages get a controlled bash even on systems without one at
+          #    /bin/bash. host-build.mk captures this as CONFIG_SHELL for every
+          #    host package's ./configure. Some packages (e.g. libtool, via its
+          #    own ./bootstrap/autoreconf step) end up with a *quoted*
+          #    '$(SHELL)' in their generated Makefile, and bash then tries to
+          #    execute a single file literally named "/usr/bin/env bash" and
+          #    fails. We pass SHELL=/bin/bash on the `make` command line below
+          #    (see also SHELL=/bin/bash further down in this workflow) to
+          #    override this with a plain single-word path everywhere, which
+          #    sidesteps the quoting bug for every host/target package at once.
       - name: Compile Tools
         if: ${{ env.REBUILD_CHECK == 'true' }}
         run: |
           cd $OPENWRT_ROOT_PATH
           echo -e "$(nproc) Thread Compile"
-          make tools/compile -j$(($(nproc) + 1)) || make tools/compile -j1 V=s
+          make tools/compile -j$(($(nproc) + 1)) SHELL=/bin/bash || make tools/compile -j1 V=s SHELL=/bin/bash
       - name: Compile Toolchain
         if: ${{ env.REBUILD_CHECK == 'true' }}
         run: |
           cd $OPENWRT_ROOT_PATH
           echo -e "$(nproc) Thread Compile"
-          make toolchain/compile -j$(($(nproc) + 1)) || make toolchain/compile -j1 V=s
+          make toolchain/compile -j$(($(nproc) + 1)) SHELL=/bin/bash || make toolchain/compile -j1 V=s SHELL=/bin/bash
           rm -rf .config* dl bin
       - name: Generate Toolchain Image
         if: ${{ env.REBUILD_CHECK == 'true' }}
@@ -471,7 +483,7 @@ jobs:
         id: download
         run: |
           cd $OPENWRT_ROOT_PATH
-          make download -j10 || make download -j10 V=s
+          make download -j10 SHELL=/bin/bash || make download -j10 V=s SHELL=/bin/bash
           find dl -size -1024c -exec ls -l {} \;
           find dl -size -1024c -exec rm -f {} \;
       - name: Compile Packages
@@ -481,16 +493,16 @@ jobs:
           make clean
           make buildinfo
           make diffconfig buildversion feedsversion
-          make target/compile -j$(($(nproc) + 1)) IGNORE_ERRORS="m n" BUILD_LOG=1 || \
-          yes n | make target/compile -j1 V=s IGNORE_ERRORS=1
-          make package/compile -j$(($(nproc) + 1)) IGNORE_ERRORS=1 || make package/compile -j1 V=s IGNORE_ERRORS=1
+          make target/compile -j$(($(nproc) + 1)) IGNORE_ERRORS="m n" BUILD_LOG=1 SHELL=/bin/bash || \
+          yes n | make target/compile -j1 V=s IGNORE_ERRORS=1 SHELL=/bin/bash
+          make package/compile -j$(($(nproc) + 1)) IGNORE_ERRORS=1 SHELL=/bin/bash || make package/compile -j1 V=s IGNORE_ERRORS=1 SHELL=/bin/bash
           make package/index
       - name: Generate Firmware
         id: generate
         run: |
           cd $OPENWRT_ROOT_PATH
-          make package/install -j$(($(nproc) + 1)) || make package/install -j1 V=s
-          make target/install -j$(($(nproc) + 1)) || make target/install -j1 V=s
+          make package/install -j$(($(nproc) + 1)) SHELL=/bin/bash || make package/install -j1 V=s SHELL=/bin/bash
+          make target/install -j$(($(nproc) + 1)) SHELL=/bin/bash || make target/install -j1 V=s SHELL=/bin/bash
           make json_overview_image_info
           make checksum
       - name: Upload Bin To Artifact
