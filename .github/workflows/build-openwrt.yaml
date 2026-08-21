@@ -253,7 +253,7 @@ jobs:
           cd $OPENWRT_ROOT_PATH
           echo -e "$(nproc) Thread Compile"
           make toolchain/compile -j$(nproc) SHELL=/bin/bash || make toolchain/compile -j1 V=s SHELL=/bin/bash
-          rm -rf .config* dl bin
+          rm -rf bin staging_dir/host/stamp
 
       - name: Generate Toolchain Image
         if: ${{ env.REBUILD_CHECK == 'true' }}
