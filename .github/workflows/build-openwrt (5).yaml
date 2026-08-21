@@ -1,21 +1,23 @@
-
 #
 # Copyright (c) 2023 LENAR
 #
 # This is free software, licensed under the MIT License.
 # See /LICENSE for more information.
 #
-name: Build OpenWrt1 Firmware
+name: Build OpenWrt Firmware5
 
 on:
   repository_dispatch:
   workflow_dispatch:
     inputs:
-      version:
-        description: "OpenWrt Version (git tag on openwrt/openwrt, e.g. 24.10.8)"
-        type: string
+      branch:
+        description: "Source Branch"
+        type: choice
         required: true
-        default: "24.10.8"
+        options:
+          - openwrt-24.10.3
+          - openwrt-23.05
+          - openwrt-24.10.2
       config_file:
         description: "Config Name"
         type: choice
@@ -60,12 +62,9 @@ on:
         default: false
 
 env:
-  SOURCE_URL: https://github.com/openwrt/openwrt
-  SOURCE_ORIGIN: https://github.com/openwrt/openwrt
-  OPENWRT_VERSION: ${{ github.event.inputs.version }}
-  SOURCE_TAG: v${{ github.event.inputs.version }}
-  SOURCE_BRANCH: build-${{ github.event.inputs.version }}
-  PATCH_DIR: patches/notion-r281
+  SOURCE_URL: https://github.com/recrumptor/openwrt
+  SOURCE_ORIGIN: https://github.com/recrumptor/openwrt
+  SOURCE_BRANCH: ${{ github.event.inputs.branch }}
   FEEDS_SH: feeds.sh
   FEEDS_PKG_SH: feeds_pkg.sh
   CONFIG_FILE: ${{ github.event.inputs.config_file }}
@@ -83,7 +82,7 @@ env:
 
 jobs:
   Toolchain:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
 
     outputs:
       OPENWRT_ROOT_PATH: ${{ steps.clone.outputs.OPENWRT_ROOT_PATH }}
@@ -101,7 +100,6 @@ jobs:
       - name: Initialize Environment
         run: |
           sudo timedatectl set-timezone "$TZ"
-          
           mkdir -p workspace
           df -hT
           ulimit -n 8192
@@ -118,7 +116,7 @@ jobs:
           remove-docker-images: 'true'
 
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
 
       - name: Install Packages
         env:
@@ -143,22 +141,15 @@ jobs:
       - name: Clone Source Code
         id: clone
         run: |
-          git clone --single-branch $SOURCE_URL -b $SOURCE_TAG workspace/openwrt
+          git clone --single-branch $SOURCE_URL -b $SOURCE_BRANCH workspace/openwrt
           cd workspace/openwrt
           git config --global user.name "github-actions"
           git config --global user.email "github-actions@github.com"
-          # Cloning a tag leaves us in detached HEAD; give it a real branch
-          # name so later steps (git symbolic-ref, release notes, etc.) work.
-          git checkout -b $SOURCE_BRANCH
+          git remote add upstream $SOURCE_ORIGIN
+          git fetch upstream $SOURCE_BRANCH
+          git merge upstream/$SOURCE_BRANCH
           echo "OPENWRT_ROOT_PATH=$PWD" >> $GITHUB_ENV
           echo "OPENWRT_ROOT_PATH=$PWD" >> $GITHUB_OUTPUT
-      - name: Apply Notion R281 Device Support Patches
-        run: |
-          cd $OPENWRT_ROOT_PATH
-          for p in $GITHUB_WORKSPACE/$PATCH_DIR/*.patch; do
-            echo "Applying $(basename "$p")"
-            git am "$p"
-          done
       - name: Generate Toolchain Configuration
         run: |
           if [[ "$CONFIG_LINK" == "true" && -n "$CONFIG_URL" ]]; then
@@ -227,77 +218,37 @@ jobs:
             echo "REBUILD_CHECK=true" >> $GITHUB_ENV
             echo "REBUILD_CHECK=true" >> $GITHUB_OUTPUT
           fi
-      - name: Patch Host Tools and Environment
-        if: ${{ env.REBUILD_CHECK == 'true' }}
-        run: |
-          cd $OPENWRT_ROOT_PATH
-          # 1. Исправление для Ninja
-          sed -i 's/--no-rebuild//g' tools/ninja/Makefile
+      #- name: Install Feeds
+        #if: ${{ env.REBUILD_CHECK == 'true' }}
+        #run: |
+         # echo "Install Feeds Toolchain"
+          #cd $OPENWRT_ROOT_PATH
+          #./scripts/feeds clean
+          #./scripts/feeds update -a
+          #./scripts/feeds install -a
 
-          # 2. Подготовка bash и env для libtool
-          mkdir -p staging_dir/host/bin
-          mkdir -p staging_dir/host/stamp
-          ln -sf $(which bash) staging_dir/host/bin/bash
-          ln -sf $(which env) staging_dir/host/bin/env
-
-          # 3. tools/lzma (LZMA_Alone from the old 7-Zip SDK, needed for this
-          #    device's kernel image via Device/uimage-lzma-loader) fails to
-          #    compile on newer Ubuntu/gcc because gcc now treats
-          #    -Wformat-security as an error by default, and this ~2007
-          #    C/C++ code calls printf() with a non-literal format string.
-          #    NOTE: do NOT symlink the system `lzma` (xz-utils) here instead
-          #    -- it uses a completely different CLI than LZMA_Alone
-          #    (`lzma e file -lc1 -lp2 -pb2`) and would silently produce a
-          #    kernel image the bootloader can't decompress (LZMA ERROR 1 /
-          #    bricked device), not a build failure. Just relax the warning
-          #    so the real tool builds instead.
-          sed -i 's|-f makefile.gcc$|-f makefile.gcc CFLAGS="-O2 -Wall -Wno-error=format-security" CXXFLAGS="-O2 -Wall -Wno-error=format-security"|' tools/lzma/Makefile
-
-          # 4. rules.mk sets SHELL:=/usr/bin/env bash (two words) so autotools
-          #    packages get a controlled bash even on systems without one at
-          #    /bin/bash. host-build.mk captures this as CONFIG_SHELL for every
-          #    host package's ./configure. Some packages (e.g. libtool, via its
-          #    own ./bootstrap/autoreconf step) end up with a *quoted*
-          #    '$(SHELL)' in their generated Makefile, and bash then tries to
-          #    execute a single file literally named "/usr/bin/env bash" and
-          #    fails. We pass SHELL=/bin/bash on the `make` command line below
-          #    (see also SHELL=/bin/bash further down in this workflow) to
-          #    override this with a plain single-word path everywhere, which
-          #    sidesteps the quoting bug for every host/target package at once.
-
-          # 5. tools/bc's own 001-no_doc.patch touches Makefile.am, which
-          #    should trigger a Makefile.in regen via the freshly-built host
-          #    automake (PKG_FIXUP := autoreconf). That regen step is wrapped
-          #    in "|| true" upstream and can fail silently, leaving the
-          #    original bc-1.07.1 tarball's Makefile.in in place -- which
-          #    hardcodes a check for automake-1.14, not present on current
-          #    runners, and errors out (Makefile:303) instead of degrading
-          #    gracefully like newer automake's `missing` script would. We
-          #    don't need the doc-skipping patch to take effect for a
-          #    host-only calculator used during the kernel build, so just
-          #    touch the generated autotools files after Prepare so make
-          #    never tries to regenerate them.
-          cat > /tmp/bc-configure-override.txt << 'BLOCKEOF'
-          define Host/Configure
-          	touch $(HOST_BUILD_DIR)/aclocal.m4 $(HOST_BUILD_DIR)/configure \
-          		$(HOST_BUILD_DIR)/Makefile.in $(HOST_BUILD_DIR)/config.h.in 2>/dev/null || true
-          	$(call Host/Configure/Default)
-          endef
-
-          BLOCKEOF
-          sed -i '/^\$(eval \$(call HostBuild))/r /tmp/bc-configure-override.txt' tools/bc/Makefile
+      #- name: Load Custom Configuration
+        #if: ${{ env.REBUILD_CHECK == 'true' }}
+        #run: |
+          #if [[ "$CONFIG_LINK" == "true" && -n "$CONFIG_URL" ]]; then
+            #curl -s $CONFIG_URL -o $OPENWRT_ROOT_PATH/.config
+          #else
+            #cp ./config/$CONFIG_FILE $OPENWRT_ROOT_PATH/.config
+          #fi
+          #cd $OPENWRT_ROOT_PATH
+          #make defconfig
       - name: Compile Tools
         if: ${{ env.REBUILD_CHECK == 'true' }}
         run: |
           cd $OPENWRT_ROOT_PATH
           echo -e "$(nproc) Thread Compile"
-          make tools/compile -j$(($(nproc) + 1)) SHELL=/bin/bash || make tools/compile -j1 V=s SHELL=/bin/bash
+          make tools/compile -j$(($(nproc) + 1)) || make tools/compile -j1 V=s
       - name: Compile Toolchain
         if: ${{ env.REBUILD_CHECK == 'true' }}
         run: |
           cd $OPENWRT_ROOT_PATH
           echo -e "$(nproc) Thread Compile"
-          make toolchain/compile -j$(($(nproc) + 1)) SHELL=/bin/bash || make toolchain/compile -j1 V=s SHELL=/bin/bash
+          make toolchain/compile -j$(($(nproc) + 1)) || make toolchain/compile -j1 V=s
           rm -rf .config* dl bin
       - name: Generate Toolchain Image
         if: ${{ env.REBUILD_CHECK == 'true' }}
@@ -312,7 +263,7 @@ jobs:
           ls -lh $GITHUB_WORKSPACE/output
       - name: Upload Toolchain Image To Artifact
         if: ${{ env.TOOLCHAIN_RELEASE != 'true' && env.REBUILD_CHECK == 'true' }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ env.TOOLCHAIN_IMAGE }}
           path: output
@@ -343,13 +294,12 @@ jobs:
 
   Build:
     needs: [Toolchain]
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
 
     steps:
       - name: Initialize Environment
         run: |
           sudo timedatectl set-timezone "$TZ"
-          
           mkdir -p workspace
           df -hT
           ulimit -n 8192
@@ -378,7 +328,7 @@ jobs:
           remove-docker-images: 'true'
 
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
 
       - name: Install Packages
         env:
@@ -391,7 +341,7 @@ jobs:
           df -hT
       - name: Download Toolchain Image From Artifact
         if: ${{ env.TOOLCHAIN_RELEASE != 'true' }}
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v4
         with:
           name: ${{ env.TOOLCHAIN_IMAGE }}
           path: workspace
@@ -418,6 +368,13 @@ jobs:
           mkdir -p openwrt-ro openwrt workdir overlay
           sudo mount -o loop $TOOLCHAIN_IMAGE.img openwrt-ro
           sudo mount -t overlay overlay -o lowerdir=openwrt-ro,upperdir=overlay,workdir=workdir openwrt
+      - name: Update Source Code
+        run: |
+          cd $OPENWRT_ROOT_PATH
+          git config --global user.name "github-actions"
+          git config --global user.email "github-actions@github.com"
+          git fetch upstream $SOURCE_BRANCH
+          git merge upstream/$SOURCE_BRANCH
       - name: Load Custom Feeds
         run: |
           cp ./scripts/$FEEDS_SH $OPENWRT_ROOT_PATH/$FEEDS_SH
@@ -450,8 +407,8 @@ jobs:
       - name: Load Custom Configuration And Vermagic
         run: |
           set -e
-          snapshot_version="${OPENWRT_VERSION}"
-          release_version="${OPENWRT_VERSION}"
+          snapshot_version="${SOURCE_BRANCH#openwrt-}"
+          release_version="${SOURCE_BRANCH#openwrt-}"
           # Retry logic for downloading config via curl
           if [[ "$CONFIG_LINK" == "true" && -n "$CONFIG_URL" ]]; then
             echo "Downloading config from $CONFIG_URL..."
@@ -489,7 +446,7 @@ jobs:
           fi
           make defconfig
       - name: Upload Config To Artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: Config
           path: ${{ env.OPENWRT_ROOT_PATH }}/.config
@@ -506,7 +463,7 @@ jobs:
         id: download
         run: |
           cd $OPENWRT_ROOT_PATH
-          make download -j10 SHELL=/bin/bash || make download -j10 V=s SHELL=/bin/bash
+          make download -j10 || make download -j10 V=s
           find dl -size -1024c -exec ls -l {} \;
           find dl -size -1024c -exec rm -f {} \;
       - name: Compile Packages
@@ -516,20 +473,20 @@ jobs:
           make clean
           make buildinfo
           make diffconfig buildversion feedsversion
-          make target/compile -j$(($(nproc) + 1)) IGNORE_ERRORS="m n" BUILD_LOG=1 SHELL=/bin/bash || \
-          yes n | make target/compile -j1 V=s IGNORE_ERRORS=1 SHELL=/bin/bash
-          make package/compile -j$(($(nproc) + 1)) IGNORE_ERRORS=1 SHELL=/bin/bash || make package/compile -j1 V=s IGNORE_ERRORS=1 SHELL=/bin/bash
+          make target/compile -j$(($(nproc) + 1)) IGNORE_ERRORS="m n" BUILD_LOG=1 || \
+          yes n | make target/compile -j1 V=s IGNORE_ERRORS=1
+          make package/compile -j$(($(nproc) + 1)) IGNORE_ERRORS=1 || make package/compile -j1 V=s IGNORE_ERRORS=1
           make package/index
       - name: Generate Firmware
         id: generate
         run: |
           cd $OPENWRT_ROOT_PATH
-          make package/install -j$(($(nproc) + 1)) SHELL=/bin/bash || make package/install -j1 V=s SHELL=/bin/bash
-          make target/install -j$(($(nproc) + 1)) SHELL=/bin/bash || make target/install -j1 V=s SHELL=/bin/bash
+          make package/install -j$(($(nproc) + 1)) || make package/install -j1 V=s
+          make target/install -j$(($(nproc) + 1)) || make target/install -j1 V=s
           make json_overview_image_info
           make checksum
       - name: Upload Bin To Artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ env.SOURCE_REPO }}-${{ env.DEVICE_NAME }}-${{ env.BUILD_DATE }}
           path: ${{ env.OPENWRT_ROOT_PATH }}/bin
