@@ -263,6 +263,28 @@ jobs:
           #    (see also SHELL=/bin/bash further down in this workflow) to
           #    override this with a plain single-word path everywhere, which
           #    sidesteps the quoting bug for every host/target package at once.
+
+          # 5. tools/bc's own 001-no_doc.patch touches Makefile.am, which
+          #    should trigger a Makefile.in regen via the freshly-built host
+          #    automake (PKG_FIXUP := autoreconf). That regen step is wrapped
+          #    in "|| true" upstream and can fail silently, leaving the
+          #    original bc-1.07.1 tarball's Makefile.in in place -- which
+          #    hardcodes a check for automake-1.14, not present on current
+          #    runners, and errors out (Makefile:303) instead of degrading
+          #    gracefully like newer automake's `missing` script would. We
+          #    don't need the doc-skipping patch to take effect for a
+          #    host-only calculator used during the kernel build, so just
+          #    touch the generated autotools files after Prepare so make
+          #    never tries to regenerate them.
+          cat > /tmp/bc-configure-override.txt << 'BLOCKEOF'
+          define Host/Configure
+          	touch $(HOST_BUILD_DIR)/aclocal.m4 $(HOST_BUILD_DIR)/configure \
+          		$(HOST_BUILD_DIR)/Makefile.in $(HOST_BUILD_DIR)/config.h.in 2>/dev/null || true
+          	$(call Host/Configure/Default)
+          endef
+
+          BLOCKEOF
+          sed -i '/^\$(eval \$(call HostBuild))/r /tmp/bc-configure-override.txt' tools/bc/Makefile
       - name: Compile Tools
         if: ${{ env.REBUILD_CHECK == 'true' }}
         run: |
