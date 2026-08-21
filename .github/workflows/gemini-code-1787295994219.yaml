@@ -1,0 +1,48 @@
+name: Debug Ninja Build
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-ninja:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install Build Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential clang flex bison gawk gettext git libncurses5-dev \
+            libssl-dev python3-distutils rsync unzip zlib1g-dev file wget
+
+      - name: Initialize OpenWrt Environment
+        run: |
+          # Переход в директорию OpenWrt (укажите ваш путь, если он отличается)
+          OPENWRT_PATH="./workspace/openwrt"
+          if [ -d "$OPENWRT_PATH" ]; then
+            cd "$OPENWRT_PATH"
+          fi
+          
+          # Базовая конфигурация без лишних пакетов
+          make defconfig
+
+      - name: Compile Host Tools Prerequisites
+        run: |
+          OPENWRT_PATH="./workspace/openwrt"
+          [ -d "$OPENWRT_PATH" ] && cd "$OPENWRT_PATH"
+          
+          # Собираем минимально необходимые инструменты перед ninja
+          make tools/m4/compile -j$(nproc)
+          make tools/autoconf/compile -j$(nproc)
+          make tools/automake/compile -j$(nproc)
+
+      - name: Compile Ninja (Debug Mode)
+        run: |
+          OPENWRT_PATH="./workspace/openwrt"
+          [ -d "$OPENWRT_PATH" ] && cd "$OPENWRT_PATH"
+          
+          # Запуск сборки Ninja в 1 поток с полным выводом ошибок
+          make tools/ninja/compile -j1 V=s
