@@ -237,38 +237,29 @@ jobs:
             echo "REBUILD_CHECK=true" >> $GITHUB_OUTPUT
           fi
 
-      # - name: Pre-download Tools Tarballs
-        # if: ${{ env.REBUILD_CHECK == 'true' }}
-        # run: |
-          # cd $OPENWRT_ROOT_PATH
-          # make tools/download -j8 SHELL=/bin/bash || make tools/download -j1 SHELL=/bin/bash
-          # find dl -size -1024c -exec rm -f {} \;
+      
 
-      - name: Install Host Tools via APT
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ninja-build lzma bc build-essential ccache
-
-      - name: Bypass OpenWrt Host Tools (Use System Tools)
+      - name: Skip Heavy Host Tools (Use System Binaries)
         run: |
           cd $OPENWRT_ROOT_PATH
-          mkdir -p staging_dir/host/stamp
+
+          # Устанавливаем готовые бинарники в Ubuntu Runner
+          sudo apt-get update
+          sudo apt-get install -y ninja-build cmake bc xz-utils lzma ccache gettext
+
+          # Вырезаем сборку проблемных тяжелых утилит из главная конфигурации tools
+          for tool in ninja cmake xz bc sed tar patch m4 autoconf; do
+            sed -i "/tools-y += $tool/d" tools/Makefile
+            sed -i "/tools-.* += $tool/d" tools/Makefile
+          done
+
+          # Создаем симлинки на системные утилиты хоста
           mkdir -p staging_dir/host/bin
-
-          # 1. Пропускаем сборку Ninja и LZMA через Stamp-файлы
-          touch staging_dir/host/stamp/.tools-ninja_compile
-          touch staging_dir/host/stamp/.tools-ninja_installed
-          touch staging_dir/host/stamp/.tools-lzma_compile
-          touch staging_dir/host/stamp/.tools-lzma_installed
-          touch staging_dir/host/stamp/.tools-bc_compile
-          touch staging_dir/host/stamp/.tools-bc_installed
-
-          # 2. Делаем прямые ссылки на системные бинарники хоста
-          ln -sf $(which ninja) staging_dir/host/bin/ninja
+          ln -sf $(which ninja-build) staging_dir/host/bin/ninja
+          ln -sf $(which cmake) staging_dir/host/bin/cmake
+          ln -sf $(which xz) staging_dir/host/bin/xz
           ln -sf $(which lzma) staging_dir/host/bin/lzma
           ln -sf $(which bc) staging_dir/host/bin/bc
-          ln -sf $(which bash) staging_dir/host/bin/bash
-          ln -sf $(which env) staging_dir/host/bin/env
  
       - name: Compile Tools
         if: ${{ env.REBUILD_CHECK == 'true' }}
