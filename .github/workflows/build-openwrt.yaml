@@ -165,11 +165,13 @@ jobs:
           else
             cp ./config/$CONFIG_FILE $OPENWRT_ROOT_PATH/.config
           fi
-          # Не включаем ALL=y, чтобы не собирать падающие host tools
           cd $OPENWRT_ROOT_PATH
           
-          # Отключаем внутреннюю сборку ninja, lzma и bc, переключая на системные утилиты из apt
+          # Отключаем внутреннюю сборку ninja, переключая на системную
           echo "CONFIG_PACKAGE_ninja=n" >> .config
+          
+          # Добавляем альтернативное надежное зеркало для скачивания исходников GNU
+          echo 'CONFIG_LOCALMIRROR="https://sources.openwrt.org/ https://sources.immortalwrt.org/"' >> .config
           
           make defconfig
       - name: Generate Variables
@@ -231,19 +233,28 @@ jobs:
             echo "REBUILD_CHECK=true" >> $GITHUB_OUTPUT
           fi
 
+      - name: Pre-download Tools Tarballs
+        if: ${{ env.REBUILD_CHECK == 'true' }}
+        run: |
+          cd $OPENWRT_ROOT_PATH
+          make tools/download -j8 SHELL=/bin/bash || make tools/download -j1 SHELL=/bin/bash
+          find dl -size -1024c -exec rm -f {} \;
+
       - name: Compile Tools
         if: ${{ env.REBUILD_CHECK == 'true' }}
         run: |
           cd $OPENWRT_ROOT_PATH
           echo -e "$(nproc) Thread Compile"
-          make tools/compile -j$(($(nproc) + 1)) SHELL=/bin/bash || make tools/compile -j1 V=s SHELL=/bin/bash
+          make tools/compile -j$(nproc) SHELL=/bin/bash || make tools/compile -j1 V=s SHELL=/bin/bash
+
       - name: Compile Toolchain
         if: ${{ env.REBUILD_CHECK == 'true' }}
         run: |
           cd $OPENWRT_ROOT_PATH
           echo -e "$(nproc) Thread Compile"
-          make toolchain/compile -j$(($(nproc) + 1)) SHELL=/bin/bash || make toolchain/compile -j1 V=s SHELL=/bin/bash
+          make toolchain/compile -j$(nproc) SHELL=/bin/bash || make toolchain/compile -j1 V=s SHELL=/bin/bash
           rm -rf .config* dl bin
+
       - name: Generate Toolchain Image
         if: ${{ env.REBUILD_CHECK == 'true' }}
         run: |
@@ -255,6 +266,7 @@ jobs:
           cd $OPENWRT_ROOT_PATH
           echo $CURRENT_HASH > $GITHUB_WORKSPACE/output/$TOOLCHAIN_IMAGE.hash
           ls -lh $GITHUB_WORKSPACE/output
+
       - name: Upload Toolchain Image To Artifact
         if: ${{ env.TOOLCHAIN_RELEASE != 'true' && env.REBUILD_CHECK == 'true' }}
         uses: actions/upload-artifact@v7
@@ -423,7 +435,6 @@ jobs:
           kmods=$(curl -s https://downloads.openwrt.org/releases/${version}/targets/${DEVICE_TARGET}/${DEVICE_SUBTARGET}/kmods/ \
             | grep -oP '<td class="n"><a href="\K[^/]+|<td class="d">\K[^<]+' \
             | paste -d '|' - - | sort -t '|' -k2 | head -n1 | cut -d '|' -f1)
-          # echo "src/gz openwrt_kmods https://downloads.openwrt.org/releases/${version}/targets/${DEVICE_TARGET}/${DEVICE_SUBTARGET}/kmods/${kmods}" >> ./custom/files/etc/opkg/customfeeds.conf
           cd $OPENWRT_ROOT_PATH
           grep -q '^CONFIG_VERSION_REPO=' ./.config \
             && sed -i "s|^CONFIG_VERSION_REPO=.*|CONFIG_VERSION_REPO=\"https://downloads.openwrt.org/releases/${version}\"|" ./.config \
@@ -432,6 +443,10 @@ jobs:
             echo "$kmods" | sed 's/.*-//' > .vermagic
             sed -i -e 's/^\(.\).*vermagic$/\1cp $(TOPDIR)\/.vermagic $(LINUX_DIR)\/.vermagic/' ./include/kernel-defaults.mk
           fi
+          
+          # Убеждаемся, что локальное зеркало прописано и во второй джобе
+          echo 'CONFIG_LOCALMIRROR="https://sources.openwrt.org/ https://sources.immortalwrt.org/"' >> ./.config
+          
           make defconfig
       - name: Upload Config To Artifact
         uses: actions/upload-artifact@v7
