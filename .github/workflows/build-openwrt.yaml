@@ -241,7 +241,7 @@ jobs:
           find dl -size -1024c -exec rm -f {} \;
 
       - name: Patch Host Tools and Environment
-        if: ${{ env.REBUILD_CHECK == 'true' }}
+        
         run: |
           cd $OPENWRT_ROOT_PATH
           # 1. Исправление для Ninja
