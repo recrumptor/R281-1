@@ -165,8 +165,12 @@ jobs:
           else
             cp ./config/$CONFIG_FILE $OPENWRT_ROOT_PATH/.config
           fi
-          echo -e "\nCONFIG_ALL=y\nCONFIG_ALL_NONSHARED=y" >> $OPENWRT_ROOT_PATH/.config
+          # Не включаем ALL=y, чтобы не собирать падающие host tools
           cd $OPENWRT_ROOT_PATH
+          
+          # Отключаем внутреннюю сборку ninja, lzma и bc, переключая на системные утилиты из apt
+          echo "CONFIG_PACKAGE_ninja=n" >> .config
+          
           make defconfig
       - name: Generate Variables
         id: env
@@ -226,65 +230,7 @@ jobs:
             echo "REBUILD_CHECK=true" >> $GITHUB_ENV
             echo "REBUILD_CHECK=true" >> $GITHUB_OUTPUT
           fi
-      - name: Patch Host Tools and Environment
-        if: ${{ env.REBUILD_CHECK == 'true' }}
-        run: |
-          cd $OPENWRT_ROOT_PATH
-          # 1. Исправление для Ninja
-          sed -i 's/--no-rebuild//g' tools/ninja/Makefile
 
-          # 2. Подготовка bash и env для libtool
-          mkdir -p staging_dir/host/bin
-          mkdir -p staging_dir/host/stamp
-          ln -sf $(which bash) staging_dir/host/bin/bash
-          ln -sf $(which env) staging_dir/host/bin/env
-
-          # 3. tools/lzma (LZMA_Alone from the old 7-Zip SDK, needed for this
-          #    device's kernel image via Device/uimage-lzma-loader) fails to
-          #    compile on newer Ubuntu/gcc because gcc now treats
-          #    -Wformat-security as an error by default, and this ~2007
-          #    C/C++ code calls printf() with a non-literal format string.
-          #    NOTE: do NOT symlink the system `lzma` (xz-utils) here instead
-          #    -- it uses a completely different CLI than LZMA_Alone
-          #    (`lzma e file -lc1 -lp2 -pb2`) and would silently produce a
-          #    kernel image the bootloader can't decompress (LZMA ERROR 1 /
-          #    bricked device), not a build failure. Just relax the warning
-          #    so the real tool builds instead.
-          sed -i 's|-f makefile.gcc$|-f makefile.gcc CFLAGS="-O2 -Wall -Wno-error=format-security" CXXFLAGS="-O2 -Wall -Wno-error=format-security"|' tools/lzma/Makefile
-
-          # 4. rules.mk sets SHELL:=/usr/bin/env bash (two words) so autotools
-          #    packages get a controlled bash even on systems without one at
-          #    /bin/bash. host-build.mk captures this as CONFIG_SHELL for every
-          #    host package's ./configure. Some packages (e.g. libtool, via its
-          #    own ./bootstrap/autoreconf step) end up with a *quoted*
-          #    '$(SHELL)' in their generated Makefile, and bash then tries to
-          #    execute a single file literally named "/usr/bin/env bash" and
-          #    fails. We pass SHELL=/bin/bash on the `make` command line below
-          #    (see also SHELL=/bin/bash further down in this workflow) to
-          #    override this with a plain single-word path everywhere, which
-          #    sidesteps the quoting bug for every host/target package at once.
-
-          # 5. tools/bc's own 001-no_doc.patch touches Makefile.am, which
-          #    should trigger a Makefile.in regen via the freshly-built host
-          #    automake (PKG_FIXUP := autoreconf). That regen step is wrapped
-          #    in "|| true" upstream and can fail silently, leaving the
-          #    original bc-1.07.1 tarball's Makefile.in in place -- which
-          #    hardcodes a check for automake-1.14, not present on current
-          #    runners, and errors out (Makefile:303) instead of degrading
-          #    gracefully like newer automake's `missing` script would. We
-          #    don't need the doc-skipping patch to take effect for a
-          #    host-only calculator used during the kernel build, so just
-          #    touch the generated autotools files after Prepare so make
-          #    never tries to regenerate them.
-          cat > /tmp/bc-configure-override.txt << 'BLOCKEOF'
-          define Host/Configure
-          	touch $(HOST_BUILD_DIR)/aclocal.m4 $(HOST_BUILD_DIR)/configure \
-          		$(HOST_BUILD_DIR)/Makefile.in $(HOST_BUILD_DIR)/config.h.in 2>/dev/null || true
-          	$(call Host/Configure/Default)
-          endef
-
-          BLOCKEOF
-          sed -i '/^\$(eval \$(call HostBuild))/r /tmp/bc-configure-override.txt' tools/bc/Makefile
       - name: Compile Tools
         if: ${{ env.REBUILD_CHECK == 'true' }}
         run: |
