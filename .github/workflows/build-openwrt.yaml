@@ -6,6 +6,10 @@
 #
 name: Build OpenWrt Firmware
 
+permissions:
+  contents: write
+  packages: write
+  
 on:
   repository_dispatch:
   workflow_dispatch:
@@ -59,7 +63,7 @@ on:
         default: false
 
 env:
-  SOURCE_URL: https://github.com/recrumptor/openwrt
+  SOURCE_URL: https://github.com/openwrt/openwrt
   SOURCE_ORIGIN: https://github.com/openwrt/openwrt
   OPENWRT_VERSION: ${{ github.event.inputs.version }}
   SOURCE_TAG: v${{ github.event.inputs.version }}
