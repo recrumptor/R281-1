@@ -221,7 +221,7 @@ jobs:
           SRC_DIR=$(find /tmp/toolchain-extract -mindepth 1 -maxdepth 1 -type d | head -n1)
           echo "Extracted to: $SRC_DIR"
           mkdir -p staging_dir
-          cp -a "$SRC_DIR/staging_dir/." staging_dir/
+          cp -a "$SRC_DIR/." staging_dir/
           rm -rf /tmp/toolchain-extract /tmp/toolchain.tar.zst
           rm -rf .config* dl bin
       - name: Generate Toolchain Image
