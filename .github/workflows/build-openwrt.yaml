@@ -222,7 +222,7 @@ jobs:
           echo "Extracted to: $SRC_DIR"
           mkdir -p staging_dir
           cp -a "$SRC_DIR/." staging_dir/
-          chmod -R +x staging_dir/host/bin/
+          
           rm -rf /tmp/toolchain-extract /tmp/toolchain.tar.zst
           rm -rf .config* dl bin
       - name: Generate Toolchain Image
