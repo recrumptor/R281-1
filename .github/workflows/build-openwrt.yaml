@@ -221,19 +221,22 @@ jobs:
           curl -fL --retry 5 --retry-delay 5 -o "/tmp/$SDK_FILE" "$BASE_URL/$SDK_FILE"
           mkdir -p /tmp/sdk-extract
           case "$SDK_FILE" in
-            *.tar.zst) tar --zstd -xf "/tmp/$SDK_FILE" -C /tmp/sdk-extract ;;
-            *.tar.xz)  tar -xf "/tmp/$SDK_FILE" -C /tmp/sdk-extract ;;
+            *.tar.zst) tar --zstd -xf "/tmp/$SDK_FILE" -C /tmp/sdk-extract --strip-components=1 ;;
+            *.tar.xz)  tar -xf "/tmp/$SDK_FILE" -C /tmp/sdk-extract --strip-components=1 ;;
           esac
-          echo "--- actual extracted tree (up to 3 levels deep) ---"
-          find /tmp/sdk-extract -maxdepth 3 | sort
-          SRC_DIR=$(find /tmp/sdk-extract -mindepth 1 -maxdepth 1 -type d | head -n1)
-          echo "Extracted to: $SRC_DIR"
-          mkdir -p staging_dir
-          if [ -d "$SRC_DIR/staging_dir" ]; then
-            cp -a "$SRC_DIR/staging_dir/." staging_dir/
-          else
-            cp -a "$SRC_DIR/." staging_dir/
+          echo "--- extracted SDK top level ---"
+          ls -la /tmp/sdk-extract
+          if [ ! -d /tmp/sdk-extract/staging_dir ]; then
+            echo "ERROR: extracted SDK has no staging_dir/ at its top level"
+            exit 1
           fi
+          # mv (a same-filesystem rename) instead of cp -a: cp -a's
+          # --preserve=ownership hit "Permission denied" on a handful of
+          # files (tar/find/patch/xargs) since we're not root and can't
+          # chown to the archive's original owner. mv sidesteps that
+          # entirely -- it doesn't need to copy or preserve anything.
+          rm -rf staging_dir
+          mv /tmp/sdk-extract/staging_dir staging_dir
           rm -rf /tmp/sdk-extract "/tmp/$SDK_FILE"
           rm -rf .config* dl bin
 
