@@ -77,7 +77,7 @@ env:
 
 jobs:
   Toolchain:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
 
     outputs:
       OPENWRT_ROOT_PATH: ${{ steps.clone.outputs.OPENWRT_ROOT_PATH }}
@@ -200,38 +200,46 @@ jobs:
           # Rather than compiling tools/toolchain from source ourselves (which
           # kept failing on ninja/lzma/libtool/bc -- ancient host-tool code
           # tripping over newer Ubuntu/gcc defaults on GitHub's runner image),
-          # grab the official prebuilt toolchain archive OpenWrt's own
-          # buildbots produce for this exact release/target/subtarget. It
-          # ships a ready-to-use staging_dir/host (all the host tools we kept
-          # fighting) and staging_dir/toolchain-* (the mips cross-compiler),
-          # built in an environment that demonstrably doesn't hit these bugs.
-          # This also gives the best possible vermagic match, since it's the
-          # literal toolchain OpenWrt used to build the official kmod
-          # packages for this release.
+          # grab the official prebuilt SDK archive OpenWrt's own buildbots
+          # produce for this exact release/target/subtarget. Unlike the plain
+          # "openwrt-toolchain-*" archive (which only contains the mips
+          # cross-compiler, staging_dir/toolchain-*), the SDK is a standalone
+          # package-building environment and so it also bundles a ready-to-use
+          # staging_dir/host with all the host tools we kept fighting
+          # (m4, automake, autoconf, libtool, ninja, bc, ...), built in an
+          # environment that demonstrably doesn't hit these bugs. This also
+          # gives the best possible vermagic match, since it's the literal
+          # toolchain OpenWrt used to build the official kmod packages for
+          # this release.
           BASE_URL="https://downloads.openwrt.org/releases/$OPENWRT_VERSION/targets/$DEVICE_TARGET/$DEVICE_SUBTARGET"
-          TOOLCHAIN_FILE=$(curl -fsSL "$BASE_URL/" | grep -oP 'openwrt-toolchain-[^"]+\.tar\.zst' | head -n1)
-          if [ -z "$TOOLCHAIN_FILE" ]; then
-            echo "ERROR: could not find an official openwrt-toolchain archive at $BASE_URL/"
+          SDK_FILE=$(curl -fsSL "$BASE_URL/" | grep -oP 'openwrt-sdk-[^"]+\.tar\.(zst|xz)' | head -n1)
+          if [ -z "$SDK_FILE" ]; then
+            echo "ERROR: could not find an official openwrt-sdk archive at $BASE_URL/"
             exit 1
           fi
-          echo "Downloading $TOOLCHAIN_FILE"
-          curl -fL --retry 5 --retry-delay 5 -o /tmp/toolchain.tar.zst "$BASE_URL/$TOOLCHAIN_FILE"
-          mkdir -p /tmp/toolchain-extract
-          tar --zstd -xf /tmp/toolchain.tar.zst -C /tmp/toolchain-extract
-          SRC_DIR=$(find /tmp/toolchain-extract -mindepth 1 -maxdepth 1 -type d | head -n1)
+          echo "Downloading $SDK_FILE"
+          curl -fL --retry 5 --retry-delay 5 -o "/tmp/$SDK_FILE" "$BASE_URL/$SDK_FILE"
+          mkdir -p /tmp/sdk-extract
+          case "$SDK_FILE" in
+            *.tar.zst) tar --zstd -xf "/tmp/$SDK_FILE" -C /tmp/sdk-extract ;;
+            *.tar.xz)  tar -xf "/tmp/$SDK_FILE" -C /tmp/sdk-extract ;;
+          esac
+          echo "--- actual extracted tree (up to 3 levels deep) ---"
+          find /tmp/sdk-extract -maxdepth 3 | sort
+          SRC_DIR=$(find /tmp/sdk-extract -mindepth 1 -maxdepth 1 -type d | head -n1)
           echo "Extracted to: $SRC_DIR"
           mkdir -p staging_dir
-          cp -a "$SRC_DIR/." staging_dir/
-          
-          rm -rf /tmp/toolchain-extract /tmp/toolchain.tar.zst
+          if [ -d "$SRC_DIR/staging_dir" ]; then
+            cp -a "$SRC_DIR/staging_dir/." staging_dir/
+          else
+            cp -a "$SRC_DIR/." staging_dir/
+          fi
+          rm -rf /tmp/sdk-extract "/tmp/$SDK_FILE"
           rm -rf .config* dl bin
 
-          # testing
-          ls -la staging_dir/host/bin/m4
-          file staging_dir/host/bin/m4
-          ldd staging_dir/host/bin/m4 || true
-          staging_dir/host/bin/m4 --version || echo "m4 --version failed with exit code $?"
-          
+          echo "--- diagnosing staging_dir/host/bin/m4 ---"
+          ls -la staging_dir/host/bin/m4 || echo "not found at expected path"
+          find staging_dir -iname 'm4*' -maxdepth 6
       - name: Generate Toolchain Image
         run: |
           cd workspace
@@ -273,7 +281,7 @@ jobs:
 
   Build:
     needs: [Toolchain]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
 
     steps:
       - name: Initialize Environment
