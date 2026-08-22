@@ -6,10 +6,6 @@
 #
 name: Build OpenWrt Firmware
 
-permissions:
-  contents: write
-  packages: write
-  
 on:
   repository_dispatch:
   workflow_dispatch:
@@ -49,10 +45,6 @@ on:
         description: "Toolchain Release"
         type: boolean
         default: true
-      toolchain_rebuild:
-        description: "Force Rebuild Toolchain"
-        type: boolean
-        default: false
       vermagic:
         description: "Replace Vermagic"
         type: boolean
@@ -77,7 +69,6 @@ env:
   DIY_SH: ${{ github.event.inputs.diy }}
   FIRMWARE_RELEASE: ${{ github.event.inputs.firmware_release }}
   TOOLCHAIN_RELEASE: ${{ github.event.inputs.toolchain_release }}
-  TOOLCHAIN_REBUILD: ${{ github.event.inputs.toolchain_rebuild }}
   TOOLCHAIN_TAG: toolchain
   VERMAGIC: ${{ github.event.inputs.vermagic }}
   VERMAGIC_OPT: ${{ github.event.inputs.vermagic_opt }}
@@ -169,14 +160,8 @@ jobs:
           else
             cp ./config/$CONFIG_FILE $OPENWRT_ROOT_PATH/.config
           fi
+          echo -e "\nCONFIG_ALL=y\nCONFIG_ALL_NONSHARED=y" >> $OPENWRT_ROOT_PATH/.config
           cd $OPENWRT_ROOT_PATH
-          
-          # Отключаем внутреннюю сборку ninja, переключая на системную
-          # echo "CONFIG_PACKAGE_ninja=n" >> .config
-          
-          # Добавляем альтернативное надежное зеркало для скачивания исходников GNU
-          echo 'CONFIG_LOCALMIRROR="https://sources.openwrt.org/ https://sources.immortalwrt.org/"' >> .config
-          
           make defconfig
       - name: Generate Variables
         id: env
@@ -209,85 +194,46 @@ jobs:
           export BUILD_DATE=$(date +"%Y-%m-%d-%H%M")
           echo "BUILD_DATE=$BUILD_DATE" >> $GITHUB_ENV
           echo "BUILD_DATE=$BUILD_DATE" >> $GITHUB_OUTPUT
-      - name: Get Release Hash
-        continue-on-error: true
-        uses: robinraju/release-downloader@v1.12
-        with:
-          token: ${{ env.TOKEN }}
-          repository: ${{ GITHUB.REPOSITORY }}
-          fileName: ${{ env.TOOLCHAIN_IMAGE }}.hash
-          tag: ${{ env.TOOLCHAIN_TAG }}
-
-      - name: Compare Toolchain Hash
-        id: hash
+      - name: Download Prebuilt Toolchain
         run: |
-          if [ -f "$TOOLCHAIN_IMAGE.hash" ]; then
-            export CACHE_HASH=$(cat $TOOLCHAIN_IMAGE.hash)
-            echo "Cached hash is $CACHE_HASH"
-          else
-            echo "No cached hash found"
+          cd $OPENWRT_ROOT_PATH
+          # Rather than compiling tools/toolchain from source ourselves (which
+          # kept failing on ninja/lzma/libtool/bc -- ancient host-tool code
+          # tripping over newer Ubuntu/gcc defaults on GitHub's runner image),
+          # grab the official prebuilt toolchain archive OpenWrt's own
+          # buildbots produce for this exact release/target/subtarget. It
+          # ships a ready-to-use staging_dir/host (all the host tools we kept
+          # fighting) and staging_dir/toolchain-* (the mips cross-compiler),
+          # built in an environment that demonstrably doesn't hit these bugs.
+          # This also gives the best possible vermagic match, since it's the
+          # literal toolchain OpenWrt used to build the official kmod
+          # packages for this release.
+          BASE_URL="https://downloads.openwrt.org/releases/$OPENWRT_VERSION/targets/$DEVICE_TARGET/$DEVICE_SUBTARGET"
+          TOOLCHAIN_FILE=$(curl -fsSL "$BASE_URL/" | grep -oP 'openwrt-toolchain-[^"]+\.tar\.zst' | head -n1)
+          if [ -z "$TOOLCHAIN_FILE" ]; then
+            echo "ERROR: could not find an official openwrt-toolchain archive at $BASE_URL/"
+            exit 1
           fi
-          cd $OPENWRT_ROOT_PATH
-          export CURRENT_HASH=$(git log --pretty=tformat:"%H" -n1 tools toolchain)
-          echo "CURRENT_HASH=$CURRENT_HASH" >> $GITHUB_ENV
-          echo "CURRENT_HASH=$CURRENT_HASH" >> $GITHUB_OUTPUT
-          echo "CURRENT_HASH is $CURRENT_HASH"
-          if [ -z "$CACHE_HASH" ] || [ "$CURRENT_HASH" != "$CACHE_HASH" ] || [ "${{ env.TOOLCHAIN_REBUILD }}" == "true" ]; then
-            echo "REBUILD_CHECK=true" >> $GITHUB_ENV
-            echo "REBUILD_CHECK=true" >> $GITHUB_OUTPUT
-          fi
-
-      
-
-      - name: Install Feeds
-        if: ${{ env.REBUILD_CHECK == 'true' }}
-        run: |
-          echo "Install Feeds Toolchain"
-          cd $OPENWRT_ROOT_PATH
-          ./scripts/feeds clean
-          ./scripts/feeds update -a
-          ./scripts/feeds install -a
-
-      - name: Load Custom Configuration
-        if: ${{ env.REBUILD_CHECK == 'true' }}
-        run: |
-          if [[ "$CONFIG_LINK" == "true" && -n "$CONFIG_URL" ]]; then
-            curl -fsSL $CONFIG_URL -o $OPENWRT_ROOT_PATH/.config
-          else
-            cp ./config/$CONFIG_FILE $OPENWRT_ROOT_PATH/.config
-          fi
-          cd $OPENWRT_ROOT_PATH
-          make defconfig
- 
-      - name: Compile Tools
-        if: ${{ env.REBUILD_CHECK == 'true' }}
-        run: |
-          cd $OPENWRT_ROOT_PATH
-          echo -e "$(nproc) Thread Compile"
-          make tools/compile -j$(nproc) SHELL=/bin/bash || make tools/compile -j1 V=s SHELL=/bin/bash
-
-      - name: Compile Toolchain
-        if: ${{ env.REBUILD_CHECK == 'true' }}
-        run: |
-          cd $OPENWRT_ROOT_PATH
-          echo -e "$(nproc) Thread Compile"
-          make toolchain/compile -j$(nproc) SHELL=/bin/bash || make toolchain/compile -j1 V=s SHELL=/bin/bash
-          rm -rf bin staging_dir/host/stamp
-
+          echo "Downloading $TOOLCHAIN_FILE"
+          curl -fL --retry 5 --retry-delay 5 -o /tmp/toolchain.tar.zst "$BASE_URL/$TOOLCHAIN_FILE"
+          mkdir -p /tmp/toolchain-extract
+          tar --zstd -xf /tmp/toolchain.tar.zst -C /tmp/toolchain-extract
+          SRC_DIR=$(find /tmp/toolchain-extract -mindepth 1 -maxdepth 1 -type d | head -n1)
+          echo "Extracted to: $SRC_DIR"
+          mkdir -p staging_dir
+          cp -a "$SRC_DIR/staging_dir/." staging_dir/
+          rm -rf /tmp/toolchain-extract /tmp/toolchain.tar.zst
+          rm -rf .config* dl bin
       - name: Generate Toolchain Image
-        if: ${{ env.REBUILD_CHECK == 'true' }}
         run: |
           cd workspace
           mksquashfs openwrt $TOOLCHAIN_IMAGE -force-gid 1001 -force-uid 1001 -comp zstd -Xcompression-level 19
           mkdir -p $GITHUB_WORKSPACE/output
           split -d -b 1G $TOOLCHAIN_IMAGE $GITHUB_WORKSPACE/output/$TOOLCHAIN_IMAGE.img.
           rm -f $TOOLCHAIN_IMAGE
-          cd $OPENWRT_ROOT_PATH
-          echo $CURRENT_HASH > $GITHUB_WORKSPACE/output/$TOOLCHAIN_IMAGE.hash
           ls -lh $GITHUB_WORKSPACE/output
-
       - name: Upload Toolchain Image To Artifact
-        if: ${{ env.TOOLCHAIN_RELEASE != 'true' && env.REBUILD_CHECK == 'true' }}
+        if: ${{ env.TOOLCHAIN_RELEASE != 'true' }}
         uses: actions/upload-artifact@v7
         with:
           name: ${{ env.TOOLCHAIN_IMAGE }}
@@ -295,7 +241,7 @@ jobs:
           retention-days: 7
 
       - name: Delete Old Toolchain Assets From Release
-        if: ${{ env.TOOLCHAIN_RELEASE == 'true' && env.REBUILD_CHECK == 'true' }}
+        if: ${{ env.TOOLCHAIN_RELEASE == 'true' }}
         uses: mknejp/delete-release-assets@v1
         with:
           token: ${{ env.TOKEN }}
@@ -305,7 +251,7 @@ jobs:
           fail-if-no-release: false
 
       - name: Upload Toolchain Image To Release
-        if: ${{ env.TOOLCHAIN_RELEASE == 'true' && env.REBUILD_CHECK == 'true' }}
+        if: ${{ env.TOOLCHAIN_RELEASE == 'true' }}
         uses: ncipollo/release-action@v1
         with:
           token: ${{ env.TOKEN }}
@@ -454,6 +400,7 @@ jobs:
           kmods=$(curl -s https://downloads.openwrt.org/releases/${version}/targets/${DEVICE_TARGET}/${DEVICE_SUBTARGET}/kmods/ \
             | grep -oP '<td class="n"><a href="\K[^/]+|<td class="d">\K[^<]+' \
             | paste -d '|' - - | sort -t '|' -k2 | head -n1 | cut -d '|' -f1)
+          # echo "src/gz openwrt_kmods https://downloads.openwrt.org/releases/${version}/targets/${DEVICE_TARGET}/${DEVICE_SUBTARGET}/kmods/${kmods}" >> ./custom/files/etc/opkg/customfeeds.conf
           cd $OPENWRT_ROOT_PATH
           grep -q '^CONFIG_VERSION_REPO=' ./.config \
             && sed -i "s|^CONFIG_VERSION_REPO=.*|CONFIG_VERSION_REPO=\"https://downloads.openwrt.org/releases/${version}\"|" ./.config \
@@ -462,10 +409,6 @@ jobs:
             echo "$kmods" | sed 's/.*-//' > .vermagic
             sed -i -e 's/^\(.\).*vermagic$/\1cp $(TOPDIR)\/.vermagic $(LINUX_DIR)\/.vermagic/' ./include/kernel-defaults.mk
           fi
-          
-          # Убеждаемся, что локальное зеркало прописано и во второй джобе
-          echo 'CONFIG_LOCALMIRROR="https://sources.openwrt.org/ https://sources.immortalwrt.org/"' >> ./.config
-          
           make defconfig
       - name: Upload Config To Artifact
         uses: actions/upload-artifact@v7
