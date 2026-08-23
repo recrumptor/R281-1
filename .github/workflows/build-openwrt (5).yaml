@@ -4,7 +4,7 @@
 # This is free software, licensed under the MIT License.
 # See /LICENSE for more information.
 #
-name: Build OpenWrt Firmware5
+name: Build OpenWrt Firmware
 
 on:
   repository_dispatch:
@@ -74,7 +74,7 @@ jobs:
       - name: Initialize Environment
         run: |
           sudo timedatectl set-timezone "$TZ"
-          mkdir -p workspace
+          mkdir -p openwrt
           df -hT
           ulimit -n 8192
 
@@ -113,25 +113,48 @@ jobs:
           sudo -E apt-get -qq autoremove --purge
           sudo -E apt-get -qq clean
 
-      - name: Determine Target & Subtarget
-        id: target_info
+      - name: Load Config & Parse Target/Subtarget
         run: |
           if [[ "$CONFIG_LINK" == "true" && -n "$CONFIG_URL" ]]; then
-            curl -fsSL "$CONFIG_URL" -o temp.config
+            curl -fsSL "$CONFIG_URL" -o openwrt/.config
           else
-            cp ./config/$CONFIG_FILE temp.config
+            cp ./config/$CONFIG_FILE openwrt/.config
           fi
           
-          DEVICE_TARGET=$(grep 'CONFIG_TARGET_BOARD' temp.config | awk -F '"' '{print $2}')
-          DEVICE_SUBTARGET=$(grep 'CONFIG_TARGET_SUBTARGET' temp.config | awk -F '"' '{print $2}')
+          # Парсим Target и Subtarget из стандартных ключей .config
+          # 1. Попытка взять явные параметры (если есть)
+          BOARD=$(grep -E '^CONFIG_TARGET_BOARD=' openwrt/.config | cut -d'"' -f2)
+          SUBBOARD=$(grep -E '^CONFIG_TARGET_SUBTARGET=' openwrt/.config | cut -d'"' -f2)
           
-          echo "DEVICE_TARGET=$DEVICE_TARGET" >> $GITHUB_ENV
-          echo "DEVICE_SUBTARGET=$DEVICE_SUBTARGET" >> $GITHUB_ENV
-          rm temp.config
+          # 2. Если параметров нет, парсим строки вида CONFIG_TARGET_ramips=y и CONFIG_TARGET_ramips_mt7621=y
+          if [ -z "$BOARD" ]; then
+            TARGET_LINE=$(grep -E '^CONFIG_TARGET_[a-zA-Z0-9_]+_DEVICE_[a-zA-Z0-9_]+=y|^CONFIG_TARGET_[a-zA-Z0-9_]+=[^y]' openwrt/.config | head -n1)
+            # Извлекаем архитектуру (первую часть после CONFIG_TARGET_)
+            BOARD=$(grep -E '^CONFIG_TARGET_[a-zA-Z0-9]+=[y]' openwrt/.config | head -n1 | sed -E 's/CONFIG_TARGET_(.*)=y/\1/')
+          fi
+          
+          if [ -z "$SUBBOARD" ]; then
+            SUBBOARD=$(grep -E "^CONFIG_TARGET_${BOARD}_[a-zA-Z0-9_]+=" openwrt/.config | grep '=y' | head -n1 | sed -E "s/CONFIG_TARGET_${BOARD}_(.*)=y/\1/")
+          fi
+          
+          echo "Target Board: $BOARD"
+          echo "Subtarget: $SUBBOARD"
+          
+          if [ -z "$BOARD" ] || [ -z "$SUBBOARD" ]; then
+            echo "ERROR: Could not parse TARGET or SUBTARGET from .config!"
+            echo "Contents of target section in .config:"
+            grep 'CONFIG_TARGET' openwrt/.config
+            exit 1
+          fi
+
+          echo "DEVICE_TARGET=$BOARD" >> $GITHUB_ENV
+          echo "DEVICE_SUBTARGET=$SUBBOARD" >> $GITHUB_ENV
 
       - name: Download & Extract Prebuilt Official OpenWrt SDK
         run: |
           BASE_URL="https://downloads.openwrt.org/releases/$OPENWRT_VERSION/targets/$DEVICE_TARGET/$DEVICE_SUBTARGET"
+          echo "Fetching SDK list from: $BASE_URL"
+          
           SDK_FILE=$(curl -fsSL "$BASE_URL/" | grep -oP 'openwrt-sdk-[^"]+\.tar\.(zst|xz)' | head -n1)
           
           if [ -z "$SDK_FILE" ]; then
@@ -142,7 +165,7 @@ jobs:
           echo "Downloading $SDK_FILE..."
           curl -fL --retry 5 -o "/tmp/$SDK_FILE" "$BASE_URL/$SDK_FILE"
           
-          mkdir -p openwrt
+          echo "Extracting SDK into openwrt/..."
           case "$SDK_FILE" in
             *.tar.zst) tar --zstd -xf "/tmp/$SDK_FILE" -C openwrt --strip-components=1 ;;
             *.tar.xz)  tar -xf "/tmp/$SDK_FILE" -C openwrt --strip-components=1 ;;
@@ -151,7 +174,7 @@ jobs:
           cd openwrt
           echo "OPENWRT_ROOT_PATH=$PWD" >> $GITHUB_ENV
           echo "BUILD_DATE=$(date +'%Y-%m-%d-%H%M')" >> $GITHUB_ENV
-          
+
       - name: Apply Notion R281 Patches
         run: |
           cd $OPENWRT_ROOT_PATH
@@ -164,7 +187,7 @@ jobs:
 
       - name: Load Custom Feeds
         run: |
-          [ -f "./scripts/$FEEDS_SH" ] && cp ./scripts/$FEEDS_SH $OPENWRT_ROOT_PATH/$FEEDS_SH
+          [ -f "$GITHUB_WORKSPACE/scripts/$FEEDS_SH" ] && cp "$GITHUB_WORKSPACE/scripts/$FEEDS_SH" $OPENWRT_ROOT_PATH/$FEEDS_SH
           cd $OPENWRT_ROOT_PATH
           
           ./scripts/feeds update -a
@@ -174,7 +197,7 @@ jobs:
           fi
           
           if [ -f "$GITHUB_WORKSPACE/scripts/$FEEDS_PKG_SH" ]; then
-            cp $GITHUB_WORKSPACE/scripts/$FEEDS_PKG_SH $OPENWRT_ROOT_PATH/$FEEDS_PKG_SH
+            cp "$GITHUB_WORKSPACE/scripts/$FEEDS_PKG_SH" $OPENWRT_ROOT_PATH/$FEEDS_PKG_SH
             chmod +x ./$FEEDS_PKG_SH && ./$FEEDS_PKG_SH
             ./scripts/feeds update -a
           fi
@@ -240,7 +263,7 @@ jobs:
           # 1. Принудительно собираем Lua до вызова остальных пакетов
           make package/utils/lua/compile -j1 V=s
 
-          # 2. Основная сборка с выводом подробного лога в случае падения (без IGNORE_ERRORS)
+          # 2. Основная сборка с выгрузкой в лог
           make package/compile -j$(($(nproc) + 1)) BUILD_LOG=1 SHELL=/bin/bash || \
           make package/compile -j1 V=s SHELL=/bin/bash
 
