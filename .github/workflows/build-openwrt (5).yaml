@@ -131,7 +131,6 @@ jobs:
 
       - name: Download & Extract Prebuilt Official OpenWrt SDK
         run: |
-          cd workspace
           BASE_URL="https://downloads.openwrt.org/releases/$OPENWRT_VERSION/targets/$DEVICE_TARGET/$DEVICE_SUBTARGET"
           SDK_FILE=$(curl -fsSL "$BASE_URL/" | grep -oP 'openwrt-sdk-[^"]+\.tar\.(zst|xz)' | head -n1)
           
@@ -152,7 +151,7 @@ jobs:
           cd openwrt
           echo "OPENWRT_ROOT_PATH=$PWD" >> $GITHUB_ENV
           echo "BUILD_DATE=$(date +'%Y-%m-%d-%H%M')" >> $GITHUB_ENV
-
+          
       - name: Apply Notion R281 Patches
         run: |
           cd $OPENWRT_ROOT_PATH
