@@ -461,33 +461,20 @@ jobs:
           make download -j10 SHELL=/bin/bash || make download -j10 V=s SHELL=/bin/bash
           find dl -size -1024c -exec ls -l {} \;
           find dl -size -1024c -exec rm -f {} \;
-      - name: Diagnose Patch Application
+      
+      - name: Force Re-patch and Pre-build Lua
         run: |
           cd $OPENWRT_ROOT_PATH
-          # We've now seen FOUR different OpenWrt-shipped source patches
-          # silently fail to take effect during this build (tools/ninja,
-          # tools/libtool, tools/bc, and now package/utils/lua's
-          # 100-no_readline.patch). All of them going quiet in the same way
-          # points at something systemic rather than four unrelated bugs.
-          # One candidate: include/quilt.mk sets QUILT=y for a package if a
-          # stale .quilt_used stamp already exists in its build_dir, which
-          # switches patch handling from "actually apply via patch" to
-          # "just copy patches into a quilt series without applying them".
-          echo "--- searching for any .quilt_used stamps already present ---"
-          find . -name ".quilt_used" 2>/dev/null
-          echo "--- done ---"
-      - name: Prepare Sources and Timestamps
-        run: |
-          cd $OPENWRT_ROOT_PATH
-          # 1. Восстанавливаем оригинальные Makefile пакетов (если менялись)
+          # 1. Возвращаем оригинальный Makefile Lua (убираем прошлые sed, если они были)
           git checkout package/utils/lua/Makefile 2>/dev/null || true
 
-          # 2. Touch патчей: делаем их дата-штамп «новее» исходников,
-          # чтобы OpenWrt гарантированно запустила встроенный механизм patch
-          find package/ feeds/ target/ -name "*.patch" -exec touch {} +
+          # 2. Сбрасываем ложные маркеры готовности из SDK
+          find build_dir/ -path "*/lua-*/.configured_*" -delete 2>/dev/null || true
+          find build_dir/ -path "*/lua-*/.prepared_*" -delete 2>/dev/null || true
 
-          # 3. Полностью очищаем сомнительные кэши распаковки Lua
-          make package/utils/lua/clean
+          # 3. Собираем Lua отдельно в 1 поток (с авто-патчингом и созданием lua.h)
+          make package/utils/lua/compile -j1 V=s
+          
       - name: Compile Packages
         run: |
           cd $OPENWRT_ROOT_PATH
