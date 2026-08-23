@@ -461,6 +461,49 @@ jobs:
           make download -j10 SHELL=/bin/bash || make download -j10 V=s SHELL=/bin/bash
           find dl -size -1024c -exec ls -l {} \;
           find dl -size -1024c -exec rm -f {} \;
+      - name: Diagnose Patch Application
+        run: |
+          cd $OPENWRT_ROOT_PATH
+          # We've now seen FOUR different OpenWrt-shipped source patches
+          # silently fail to take effect during this build (tools/ninja,
+          # tools/libtool, tools/bc, and now package/utils/lua's
+          # 100-no_readline.patch). All of them going quiet in the same way
+          # points at something systemic rather than four unrelated bugs.
+          # One candidate: include/quilt.mk sets QUILT=y for a package if a
+          # stale .quilt_used stamp already exists in its build_dir, which
+          # switches patch handling from "actually apply via patch" to
+          # "just copy patches into a quilt series without applying them".
+          echo "--- searching for any .quilt_used stamps already present ---"
+          find . -name ".quilt_used" 2>/dev/null
+          echo "--- done ---"
+      - name: Patch lua To Not Require readline
+        run: |
+          cd $OPENWRT_ROOT_PATH
+          # package/utils/lua/patches/100-no_readline.patch removes
+          # LUA_USE_READLINE from luaconf.h, but isn't taking effect here
+          # (see Diagnose Patch Application above). Without it, lua/luaconf.h
+          # pulls in LUA_USE_LINUX's readline requirement, which isn't staged
+          # for the mips/musl target, breaking lua itself and then libubox's
+          # lua bindings (which need lua.h) right after it.
+          #
+          # NOTE: this can't be fixed by overriding TARGET_CFLAGS -- lua's
+          # own upstream Makefile has a "linux:" target that Build/Compile
+          # invokes, and that target unconditionally re-adds
+          # MYCFLAGS+=-DLUA_USE_LINUX itself, regardless of what CFLAGS we
+          # pass in from outside. The source patch works around this by
+          # editing luaconf.h directly (removing just the READLINE
+          # sub-define, keeping LUA_USE_LINUX/POSIX/DLOPEN intact), so we
+          # replicate that directly on the extracted source via an empty
+          # Build/Configure hook, which runs after Prepare/patch and before
+          # Build/Compile.
+          cat > /tmp/lua-configure-block.txt << 'BLOCKEOF'
+          define Build/Configure
+          	sed -i '/#define LUA_USE_READLINE/d' $(PKG_BUILD_DIR)/src/luaconf.h
+          endef
+
+          BLOCKEOF
+          sed -i '/^define Build\/Configure$/,/^endef$/d' package/utils/lua/Makefile
+          sed -i '/^TARGET_CFLAGS += -DLUA_USE_LINUX/r /tmp/lua-configure-block.txt' package/utils/lua/Makefile
       - name: Compile Packages
         run: |
           cd $OPENWRT_ROOT_PATH
