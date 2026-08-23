@@ -124,7 +124,6 @@ jobs:
             cp $GITHUB_WORKSPACE/config/$CONFIG_FILE .config
           fi
           
-          # Нативный вызов OpenWrt для расчёта конфигурации таргета
           make defconfig
           
           BOARD=$(grep 'CONFIG_TARGET_BOARD' .config | awk -F '"' '{print $2}')
@@ -151,11 +150,10 @@ jobs:
           echo "Downloading $SDK_FILE..."
           curl -fL --retry 5 -o "/tmp/$SDK_FILE" "$BASE_URL/$SDK_FILE"
           
-          # Вытаскиваем готовый staging_dir из SDK прямо в рабочую папку
           echo "Extracting prebuilt staging_dir..."
           case "$SDK_FILE" in
-            *.tar.zst) tar --zstd -xf "/tmp/$SDK_FILE" --strip-components=1 -C . "openwrt-sdk-*/staging_dir" ;;
-            *.tar.xz)  tar -xf "/tmp/$SDK_FILE" --strip-components=1 -C . "openwrt-sdk-*/staging_dir" ;;
+            *.tar.zst) tar --zstd -xf "/tmp/$SDK_FILE" --wildcards --strip-components=1 -C . "openwrt-sdk-*/staging_dir" ;;
+            *.tar.xz)  tar -xf "/tmp/$SDK_FILE" --wildcards --strip-components=1 -C . "openwrt-sdk-*/staging_dir" ;;
           esac
           rm -f "/tmp/$SDK_FILE"
 
@@ -244,14 +242,11 @@ jobs:
           make buildinfo
           make diffconfig buildversion feedsversion
           
-          # Сборка Lua в один поток для исключения ошибок параллелизма
           make package/utils/lua/compile -j1 V=s
 
-          # Основная сборка всех пакетов
           make package/compile -j$(($(nproc) + 1)) BUILD_LOG=1 SHELL=/bin/bash || \
           make package/compile -j1 V=s SHELL=/bin/bash
 
-          # Индексация OPKG
           make package/index
 
       - name: Generate Firmware
