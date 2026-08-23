@@ -74,7 +74,7 @@ jobs:
       - name: Initialize Environment
         run: |
           sudo timedatectl set-timezone "$TZ"
-          mkdir -p openwrt
+          mkdir -p workspace
           df -hT
           ulimit -n 8192
 
@@ -90,7 +90,7 @@ jobs:
           remove-codeql: 'true'
           remove-docker-images: 'true'
 
-      - name: Checkout
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
       - name: Install Dependencies
@@ -113,48 +113,34 @@ jobs:
           sudo -E apt-get -qq autoremove --purge
           sudo -E apt-get -qq clean
 
-      - name: Load Config & Parse Target/Subtarget
+      - name: Clone OpenWrt Source & Determine Target
         run: |
+          git clone --single-branch $SOURCE_URL -b v$OPENWRT_VERSION workspace/openwrt
+          cd workspace/openwrt
+          
           if [[ "$CONFIG_LINK" == "true" && -n "$CONFIG_URL" ]]; then
-            curl -fsSL "$CONFIG_URL" -o openwrt/.config
+            curl -fsSL "$CONFIG_URL" -o .config
           else
-            cp ./config/$CONFIG_FILE openwrt/.config
+            cp $GITHUB_WORKSPACE/config/$CONFIG_FILE .config
           fi
           
-          # Парсим Target и Subtarget из стандартных ключей .config
-          # 1. Попытка взять явные параметры (если есть)
-          BOARD=$(grep -E '^CONFIG_TARGET_BOARD=' openwrt/.config | cut -d'"' -f2)
-          SUBBOARD=$(grep -E '^CONFIG_TARGET_SUBTARGET=' openwrt/.config | cut -d'"' -f2)
+          # Нативный вызов OpenWrt для расчёта конфигурации таргета
+          make defconfig
           
-          # 2. Если параметров нет, парсим строки вида CONFIG_TARGET_ramips=y и CONFIG_TARGET_ramips_mt7621=y
-          if [ -z "$BOARD" ]; then
-            TARGET_LINE=$(grep -E '^CONFIG_TARGET_[a-zA-Z0-9_]+_DEVICE_[a-zA-Z0-9_]+=y|^CONFIG_TARGET_[a-zA-Z0-9_]+=[^y]' openwrt/.config | head -n1)
-            # Извлекаем архитектуру (первую часть после CONFIG_TARGET_)
-            BOARD=$(grep -E '^CONFIG_TARGET_[a-zA-Z0-9]+=[y]' openwrt/.config | head -n1 | sed -E 's/CONFIG_TARGET_(.*)=y/\1/')
-          fi
+          BOARD=$(grep 'CONFIG_TARGET_BOARD' .config | awk -F '"' '{print $2}')
+          SUBBOARD=$(grep 'CONFIG_TARGET_SUBTARGET' .config | awk -F '"' '{print $2}')
           
-          if [ -z "$SUBBOARD" ]; then
-            SUBBOARD=$(grep -E "^CONFIG_TARGET_${BOARD}_[a-zA-Z0-9_]+=" openwrt/.config | grep '=y' | head -n1 | sed -E "s/CONFIG_TARGET_${BOARD}_(.*)=y/\1/")
-          fi
-          
-          echo "Target Board: $BOARD"
-          echo "Subtarget: $SUBBOARD"
-          
-          if [ -z "$BOARD" ] || [ -z "$SUBBOARD" ]; then
-            echo "ERROR: Could not parse TARGET or SUBTARGET from .config!"
-            echo "Contents of target section in .config:"
-            grep 'CONFIG_TARGET' openwrt/.config
-            exit 1
-          fi
-
           echo "DEVICE_TARGET=$BOARD" >> $GITHUB_ENV
           echo "DEVICE_SUBTARGET=$SUBBOARD" >> $GITHUB_ENV
+          echo "OPENWRT_ROOT_PATH=$PWD" >> $GITHUB_ENV
+          echo "BUILD_DATE=$(date +'%Y-%m-%d-%H%M')" >> $GITHUB_ENV
 
-      - name: Download & Extract Prebuilt Official OpenWrt SDK
+      - name: Download Prebuilt Toolchain (SDK)
         run: |
+          cd $OPENWRT_ROOT_PATH
           BASE_URL="https://downloads.openwrt.org/releases/$OPENWRT_VERSION/targets/$DEVICE_TARGET/$DEVICE_SUBTARGET"
-          echo "Fetching SDK list from: $BASE_URL"
           
+          echo "Fetching SDK URL from $BASE_URL..."
           SDK_FILE=$(curl -fsSL "$BASE_URL/" | grep -oP 'openwrt-sdk-[^"]+\.tar\.(zst|xz)' | head -n1)
           
           if [ -z "$SDK_FILE" ]; then
@@ -165,15 +151,13 @@ jobs:
           echo "Downloading $SDK_FILE..."
           curl -fL --retry 5 -o "/tmp/$SDK_FILE" "$BASE_URL/$SDK_FILE"
           
-          echo "Extracting SDK into openwrt/..."
+          # Вытаскиваем готовый staging_dir из SDK прямо в рабочую папку
+          echo "Extracting prebuilt staging_dir..."
           case "$SDK_FILE" in
-            *.tar.zst) tar --zstd -xf "/tmp/$SDK_FILE" -C openwrt --strip-components=1 ;;
-            *.tar.xz)  tar -xf "/tmp/$SDK_FILE" -C openwrt --strip-components=1 ;;
+            *.tar.zst) tar --zstd -xf "/tmp/$SDK_FILE" --strip-components=1 -C . "openwrt-sdk-*/staging_dir" ;;
+            *.tar.xz)  tar -xf "/tmp/$SDK_FILE" --strip-components=1 -C . "openwrt-sdk-*/staging_dir" ;;
           esac
-          
-          cd openwrt
-          echo "OPENWRT_ROOT_PATH=$PWD" >> $GITHUB_ENV
-          echo "BUILD_DATE=$(date +'%Y-%m-%d-%H%M')" >> $GITHUB_ENV
+          rm -f "/tmp/$SDK_FILE"
 
       - name: Apply Notion R281 Patches
         run: |
@@ -260,14 +244,14 @@ jobs:
           make buildinfo
           make diffconfig buildversion feedsversion
           
-          # 1. Принудительно собираем Lua до вызова остальных пакетов
+          # Сборка Lua в один поток для исключения ошибок параллелизма
           make package/utils/lua/compile -j1 V=s
 
-          # 2. Основная сборка с выгрузкой в лог
+          # Основная сборка всех пакетов
           make package/compile -j$(($(nproc) + 1)) BUILD_LOG=1 SHELL=/bin/bash || \
           make package/compile -j1 V=s SHELL=/bin/bash
 
-          # 3. Индексация OPKG
+          # Индексация OPKG
           make package/index
 
       - name: Generate Firmware
