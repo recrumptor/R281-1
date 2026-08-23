@@ -499,6 +499,7 @@ jobs:
           cat > /tmp/lua-configure-block.txt << 'BLOCKEOF'
           define Build/Configure
           	sed -i '/#define LUA_USE_READLINE/d' $(PKG_BUILD_DIR)/src/luaconf.h
+          	sed -i 's/ -lreadline -lhistory -lncurses//' $(PKG_BUILD_DIR)/src/Makefile
           endef
 
           BLOCKEOF
