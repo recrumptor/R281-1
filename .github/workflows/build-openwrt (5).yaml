@@ -231,7 +231,8 @@ jobs:
       - name: Download Source Tarballs
         run: |
           cd $OPENWRT_ROOT_PATH
-          make download -j8 SHELL=/bin/bash
+          # Качаем ТОЛЬКО пакеты из .config, игнорируя базовые tools
+          make package/download -j8 SHELL=/bin/bash || make package/download -j1 V=s SHELL=/bin/bash
           find dl -size -1024c -exec rm -f {} \;
 
       - name: Compile Packages
@@ -239,7 +240,7 @@ jobs:
           cd $OPENWRT_ROOT_PATH
           echo "Building packages..."
           
-          make buildinfo
+          # make buildinfo
           make diffconfig buildversion feedsversion
           
           make package/utils/lua/compile -j1 V=s
