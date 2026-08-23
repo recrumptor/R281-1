@@ -476,53 +476,23 @@ jobs:
           echo "--- searching for any .quilt_used stamps already present ---"
           find . -name ".quilt_used" 2>/dev/null
           echo "--- done ---"
-      - name: Patch lua Package (Reapply Official Patches Directly)
+      - name: Prepare Sources and Timestamps
         run: |
           cd $OPENWRT_ROOT_PATH
-          # package/utils/lua's own OpenWrt-shipped patches (readline
-          # removal, LNUM number support, shared liblua, etc.) aren't taking
-          # effect during the normal Prepare/Patch stage on this pipeline --
-          # the same silent-skip pattern we've now hit for tools/ninja,
-          # tools/libtool and tools/bc too. Verified independently that every
-          # one of lua's 14 patches applies cleanly in sequence against a
-          # genuine lua-5.1.5 checkout, so instead of hand-reimplementing
-          # each patch's effect (010-lua-5.1.3-lnum-full-260308.patch alone
-          # is ~1800 lines adding native LNUM number support -- not
-          # practical to redo by hand), just reapply the whole official
-          # series ourselves directly via plain `patch`.
-          #
-          # The loop lives in a standalone script (not inline in the
-          # Makefile's define block) to sidestep GNU Make's $-escaping rules
-          # entirely -- Build/Configure here turned out to be invoked from
-          # inside a larger BuildTarget/Compile template that itself gets
-          # $(eval $(call ...))'d, adding an extra, hard-to-predict
-          # expansion layer that silently ate a shell loop variable written
-          # directly in the macro body.
-          cat > package/utils/lua/apply-patches.sh << 'SCRIPTEOF'
-          #!/bin/bash
-          set -e
-          BUILD_DIR="$1"
-          PATCH_DIR="$(dirname "$0")/patches"
-          for p in "$PATCH_DIR"/*.patch; do
-            echo "Applying $(basename "$p") to lua source"
-            patch -f -p1 -d "$BUILD_DIR" < "$p"
-          done
-          SCRIPTEOF
-          chmod +x package/utils/lua/apply-patches.sh
+          # 1. Восстанавливаем оригинальные Makefile пакетов (если менялись)
+          git checkout package/utils/lua/Makefile 2>/dev/null || true
 
-          cat > /tmp/lua-configure-block.txt << 'BLOCKEOF'
-          define Build/Configure
-          	$(CURDIR)/apply-patches.sh $(PKG_BUILD_DIR)
-          endef
+          # 2. Touch патчей: делаем их дата-штамп «новее» исходников,
+          # чтобы OpenWrt гарантированно запустила встроенный механизм patch
+          find package/ feeds/ target/ -name "*.patch" -exec touch {} +
 
-          BLOCKEOF
-          sed -i '/^define Build\/Configure$/,/^endef$/d' package/utils/lua/Makefile
-          sed -i '/^TARGET_CFLAGS += -DLUA_USE_LINUX/r /tmp/lua-configure-block.txt' package/utils/lua/Makefile
+          # 3. Полностью очищаем сомнительные кэши распаковки Lua
+          make package/utils/lua/clean
       - name: Compile Packages
         run: |
           cd $OPENWRT_ROOT_PATH
           echo -e "$(nproc) Thread Compile"
-          make clean
+          
           make buildinfo
           make diffconfig buildversion feedsversion
           make target/compile -j$(($(nproc) + 1)) IGNORE_ERRORS="m n" BUILD_LOG=1 SHELL=/bin/bash || \
