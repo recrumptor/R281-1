@@ -489,14 +489,30 @@ jobs:
           # each patch's effect (010-lua-5.1.3-lnum-full-260308.patch alone
           # is ~1800 lines adding native LNUM number support -- not
           # practical to redo by hand), just reapply the whole official
-          # series ourselves directly via plain `patch`, in an empty
-          # Build/Configure hook that runs right after Prepare/extraction.
+          # series ourselves directly via plain `patch`.
+          #
+          # The loop lives in a standalone script (not inline in the
+          # Makefile's define block) to sidestep GNU Make's $-escaping rules
+          # entirely -- Build/Configure here turned out to be invoked from
+          # inside a larger BuildTarget/Compile template that itself gets
+          # $(eval $(call ...))'d, adding an extra, hard-to-predict
+          # expansion layer that silently ate a shell loop variable written
+          # directly in the macro body.
+          cat > package/utils/lua/apply-patches.sh << 'SCRIPTEOF'
+          #!/bin/bash
+          set -e
+          BUILD_DIR="$1"
+          PATCH_DIR="$(dirname "$0")/patches"
+          for p in "$PATCH_DIR"/*.patch; do
+            echo "Applying $(basename "$p") to lua source"
+            patch -f -p1 -d "$BUILD_DIR" < "$p"
+          done
+          SCRIPTEOF
+          chmod +x package/utils/lua/apply-patches.sh
+
           cat > /tmp/lua-configure-block.txt << 'BLOCKEOF'
           define Build/Configure
-          	for p in $(CURDIR)/patches/*.patch; do \
-          		echo "Applying $$(basename $$p) to lua source"; \
-          		patch -f -p1 -d $(PKG_BUILD_DIR) < "$$p" || exit 1; \
-          	done
+          	$(CURDIR)/apply-patches.sh $(PKG_BUILD_DIR)
           endef
 
           BLOCKEOF
