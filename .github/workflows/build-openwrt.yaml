@@ -476,30 +476,27 @@ jobs:
           echo "--- searching for any .quilt_used stamps already present ---"
           find . -name ".quilt_used" 2>/dev/null
           echo "--- done ---"
-      - name: Patch lua To Not Require readline
+      - name: Patch lua Package (Reapply Official Patches Directly)
         run: |
           cd $OPENWRT_ROOT_PATH
-          # package/utils/lua/patches/100-no_readline.patch removes
-          # LUA_USE_READLINE from luaconf.h, but isn't taking effect here
-          # (see Diagnose Patch Application above). Without it, lua/luaconf.h
-          # pulls in LUA_USE_LINUX's readline requirement, which isn't staged
-          # for the mips/musl target, breaking lua itself and then libubox's
-          # lua bindings (which need lua.h) right after it.
-          #
-          # NOTE: this can't be fixed by overriding TARGET_CFLAGS -- lua's
-          # own upstream Makefile has a "linux:" target that Build/Compile
-          # invokes, and that target unconditionally re-adds
-          # MYCFLAGS+=-DLUA_USE_LINUX itself, regardless of what CFLAGS we
-          # pass in from outside. The source patch works around this by
-          # editing luaconf.h directly (removing just the READLINE
-          # sub-define, keeping LUA_USE_LINUX/POSIX/DLOPEN intact), so we
-          # replicate that directly on the extracted source via an empty
-          # Build/Configure hook, which runs after Prepare/patch and before
-          # Build/Compile.
+          # package/utils/lua's own OpenWrt-shipped patches (readline
+          # removal, LNUM number support, shared liblua, etc.) aren't taking
+          # effect during the normal Prepare/Patch stage on this pipeline --
+          # the same silent-skip pattern we've now hit for tools/ninja,
+          # tools/libtool and tools/bc too. Verified independently that every
+          # one of lua's 14 patches applies cleanly in sequence against a
+          # genuine lua-5.1.5 checkout, so instead of hand-reimplementing
+          # each patch's effect (010-lua-5.1.3-lnum-full-260308.patch alone
+          # is ~1800 lines adding native LNUM number support -- not
+          # practical to redo by hand), just reapply the whole official
+          # series ourselves directly via plain `patch`, in an empty
+          # Build/Configure hook that runs right after Prepare/extraction.
           cat > /tmp/lua-configure-block.txt << 'BLOCKEOF'
           define Build/Configure
-          	sed -i '/#define LUA_USE_READLINE/d' $(PKG_BUILD_DIR)/src/luaconf.h
-          	sed -i 's/ -lreadline -lhistory -lncurses//' $(PKG_BUILD_DIR)/src/Makefile
+          	for p in $(CURDIR)/patches/*.patch; do \
+          		echo "Applying $$(basename $$p) to lua source"; \
+          		patch -f -p1 -d $(PKG_BUILD_DIR) < "$$p" || exit 1; \
+          	done
           endef
 
           BLOCKEOF
