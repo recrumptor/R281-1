@@ -146,13 +146,13 @@ jobs:
           git checkout -b $SOURCE_BRANCH
           echo "OPENWRT_ROOT_PATH=$PWD" >> $GITHUB_ENV
           echo "OPENWRT_ROOT_PATH=$PWD" >> $GITHUB_OUTPUT
-      - name: Apply Notion R281 Device Support Patches
-        run: |
-          cd $OPENWRT_ROOT_PATH
-          for p in $GITHUB_WORKSPACE/$PATCH_DIR/*.patch; do
-            echo "Applying $(basename "$p")"
-            git am "$p"
-          done
+      # - name: Apply Notion R281 Device Support Patches
+        # run: |
+          # cd $OPENWRT_ROOT_PATH
+          # for p in $GITHUB_WORKSPACE/$PATCH_DIR/*.patch; do
+            # echo "Applying $(basename "$p")"
+            # git am "$p"
+          # done
       - name: Generate Toolchain Configuration
         run: |
           if [[ "$CONFIG_LINK" == "true" && -n "$CONFIG_URL" ]]; then
