@@ -470,15 +470,7 @@ jobs:
           make diffconfig buildversion feedsversion
           make target/compile -j$(($(nproc) + 1)) IGNORE_ERRORS="m n" BUILD_LOG=1 SHELL=/bin/bash || \
           yes n | make target/compile -j1 V=s IGNORE_ERRORS=1 SHELL=/bin/bash
-          make package/compile -j$(($(nproc) + 1)) IGNORE_ERRORS=1 SHELL=/bin/bash || {
-            echo "Parallel package/compile failed. Wiping build_dir/target-* before retrying,"
-            echo "in case the failed parallel attempt left any package half-extracted/"
-            echo "half-patched (stamped as prepared without the patch stage actually"
-            echo "having completed) -- resuming the retry on top of that stale state"
-            echo "would explain patches silently not taking effect on retry."
-            rm -rf build_dir/target-*
-            make package/compile -j1 V=s IGNORE_ERRORS=1 SHELL=/bin/bash
-          }
+          make package/compile -j$(($(nproc) + 1)) IGNORE_ERRORS=1 SHELL=/bin/bash || make package/compile -j1 V=s IGNORE_ERRORS=1 SHELL=/bin/bash
           make package/index
       - name: Generate Firmware
         id: generate
