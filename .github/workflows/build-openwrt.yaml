@@ -146,13 +146,13 @@ jobs:
           git checkout -b $SOURCE_BRANCH
           echo "OPENWRT_ROOT_PATH=$PWD" >> $GITHUB_ENV
           echo "OPENWRT_ROOT_PATH=$PWD" >> $GITHUB_OUTPUT
-      # - name: Apply Notion R281 Device Support Patches
-        # run: |
-          # cd $OPENWRT_ROOT_PATH
-          # for p in $GITHUB_WORKSPACE/$PATCH_DIR/*.patch; do
-            # echo "Applying $(basename "$p")"
-            # git am "$p"
-          # done
+      - name: Apply Notion R281 Device Support Patches
+        run: |
+          cd $OPENWRT_ROOT_PATH
+          for p in $GITHUB_WORKSPACE/$PATCH_DIR/*.patch; do
+            echo "Applying $(basename "$p")"
+            git am "$p"
+          done
       - name: Generate Toolchain Configuration
         run: |
           if [[ "$CONFIG_LINK" == "true" && -n "$CONFIG_URL" ]]; then
@@ -461,6 +461,14 @@ jobs:
           make download -j10 SHELL=/bin/bash || make download -j10 V=s SHELL=/bin/bash
           find dl -size -1024c -exec ls -l {} \;
           find dl -size -1024c -exec rm -f {} \;
+      - name: Diagnose Build/Patch Value
+        run: |
+          cd $OPENWRT_ROOT_PATH
+          # Insert a debug print directly into lua's own Makefile so it
+          # evaluates in the exact same invocation context as the real
+          # build (a standalone `make -C package/utils/lua -p` might not
+          # replicate TOPDIR/context correctly).
+          sed -i '/^include \$(INCLUDE_DIR)\/package.mk$/a $(info LUA_DEBUG Build/Patch=[$(Build/Patch)] PATCH_DIR=[$(PATCH_DIR)] PKG_BUILD_DIR=[$(PKG_BUILD_DIR)] CURDIR=[$(CURDIR)])' package/utils/lua/Makefile
       - name: Compile Packages
         run: |
           cd $OPENWRT_ROOT_PATH
