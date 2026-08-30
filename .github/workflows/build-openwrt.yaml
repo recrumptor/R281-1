@@ -240,33 +240,36 @@ jobs:
           rm -rf /tmp/sdk-extract "/tmp/$SDK_FILE"
           rm -rf .config* dl bin
 
-          # The SDK is built "relocatable": host/bin/* binaries carry an
-          # $ORIGIN-relative RPATH pointing at staging_dir/host/lib, so they
-          # keep working regardless of what's installed on whatever machine
-          # extracts the archive. That bundled runtime turned out to be
-          # OLDER than what some of the host tools actually need (e.g.
-          # ucert/usign failing with "version GLIBC_2.33/2.34 not found"),
-          # even though the current runner's own system glibc (Ubuntu
-          # 22.04, 2.35) is new enough. Strip the RPATH so these tools
-          # resolve their shared libs via the normal system search path
-          # instead of the bundled (and apparently mismatched) copies.
-          echo "Stripping RPATH from staging_dir/host/bin/* to use system libs instead of the SDK's bundled ones"
-          find staging_dir/host/bin -type f -exec sh -c '
-            for f; do
-              if patchelf --print-rpath "$f" >/dev/null 2>&1; then
-                patchelf --remove-rpath "$f" 2>/dev/null || true
+          # SDK собран со старой glibc, а хост (Ubuntu 22.04) — с 2.35.
+          # OpenWrt пересобирает host-tools (ucert, libubox) под текущую систему,
+          # и при запуске bundled RPATH тянет старую libc из SDK.
+          # Решение: заменить core glibc libs в SDK на симлинки на системные.
+          # Старые бинарники SDK при этом продолжают работать (glibc backward compatible).
+          echo "Replacing bundled glibc core libs with symlinks to system ones"
+          for lib in ld-linux-x86-64 libc libm libdl libpthread librt libresolv libnsl libutil; do
+            for f in staging_dir/host/lib/${lib}*.so*; do
+              [ -e "$f" ] || continue
+              case "$f" in
+                *.a|*.la) continue ;;
+              esac
+              bak="${f}.sdk-bak"
+              mv "$f" "$bak"
+              sysfile=$(find /lib/x86_64-linux-gnu /lib64 -maxdepth 1 -name "$(basename "$f")" -print -quit 2>/dev/null)
+              if [ -n "$sysfile" ]; then
+                ln -s "$sysfile" "$f"
+                echo "  $(basename "$f") -> $sysfile"
+              else
+                mv "$bak" "$f"
+                echo "  WARNING: system $(basename "$f") not found, keeping bundled"
               fi
             done
-          ' sh {} +
-          # Удаляем bundled glibc из SDK, чтобы пересобранные host-tools
-          # использовали системную libc раннера (Ubuntu 22.04, glibc 2.35)
-          echo "Removing bundled glibc core libraries from SDK"
-          mkdir -p staging_dir/host/lib.bak
-          for lib in libc libm libdl libpthread librt libresolv libnsl libutil ld-linux-x86-64; do
-            for f in staging_dir/host/lib/${lib}*; do
-              [ -e "$f" ] && mv "$f" staging_dir/host/lib.bak/
-            done
           done
+
+          # Проверяем, что базовые утилиты из SDK всё ещё работают
+          echo "Testing host tools after glibc swap..."
+          staging_dir/host/bin/sed --version >/dev/null 2>&1 && echo "  sed: OK" || { echo "  sed: FAIL"; exit 1; }
+          staging_dir/host/bin/find --version >/dev/null 2>&1 && echo "  find: OK" || { echo "  find: FAIL"; exit 1; }
+          staging_dir/host/bin/xargs --version >/dev/null 2>&1 && echo "  xargs: OK" || { echo "  xargs: FAIL"; exit 1; }
       - name: Generate Toolchain Image
         run: |
           cd workspace
