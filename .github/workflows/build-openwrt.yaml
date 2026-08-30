@@ -258,6 +258,15 @@ jobs:
               fi
             done
           ' sh {} +
+          # Удаляем bundled glibc из SDK, чтобы пересобранные host-tools
+          # использовали системную libc раннера (Ubuntu 22.04, glibc 2.35)
+          echo "Removing bundled glibc core libraries from SDK"
+          mkdir -p staging_dir/host/lib.bak
+          for lib in libc libm libdl libpthread librt libresolv libnsl libutil ld-linux-x86-64; do
+            for f in staging_dir/host/lib/${lib}*; do
+              [ -e "$f" ] && mv "$f" staging_dir/host/lib.bak/
+            done
+          done
       - name: Generate Toolchain Image
         run: |
           cd workspace
