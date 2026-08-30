@@ -10,6 +10,7 @@ cat >> ./feeds.conf.default <<EOF
 src-git 3ginfo_lite https://github.com/4IceG/luci-app-3ginfo-lite
 # src-git lite_watchdog https://github.com/4IceG/luci-app-lite-watchdog
 src-git modemband https://github.com/4IceG/luci-app-modemband
+src-git obsy_modemband https://github.com/obsy/modemband
 # src-git modemdefine https://github.com/4IceG/luci-app-modemdefine
 src-git sms_tool https://github.com/4IceG/luci-app-sms-tool-js
 # src-git xray https://github.com/yichya/luci-app-xray
