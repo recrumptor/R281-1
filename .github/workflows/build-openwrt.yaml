@@ -457,7 +457,7 @@ jobs:
           kmods=$(curl -s https://downloads.openwrt.org/releases/${version}/targets/${DEVICE_TARGET}/${DEVICE_SUBTARGET}/kmods/ \
             | grep -oP '<td class="n"><a href="\K[^/]+|<td class="d">\K[^<]+' \
             | paste -d '|' - - | sort -t '|' -k2 | head -n1 | cut -d '|' -f1)
-          # echo "src/gz openwrt_kmods https://downloads.openwrt.org/releases/${version}/targets/${DEVICE_TARGET}/${DEVICE_SUBTARGET}/kmods/${kmods}" >> ./custom/files/etc/opkg/customfeeds.conf
+          echo "src/gz openwrt_kmods https://downloads.openwrt.org/releases/${version}/targets/${DEVICE_TARGET}/${DEVICE_SUBTARGET}/kmods/${kmods}" >> ./custom/files/etc/opkg/distfeeds.conf
           cd $OPENWRT_ROOT_PATH
           grep -q '^CONFIG_VERSION_REPO=' ./.config \
             && sed -i "s|^CONFIG_VERSION_REPO=.*|CONFIG_VERSION_REPO=\"https://downloads.openwrt.org/releases/${version}\"|" ./.config \
