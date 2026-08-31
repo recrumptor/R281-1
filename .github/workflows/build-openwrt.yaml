@@ -45,12 +45,8 @@ on:
         description: "Toolchain Release"
         type: boolean
         default: true
-      vermagic:
-        description: "Replace Vermagic"
-        type: boolean
-        default: true
       vermagic_opt:
-        description: "Use SNAPSHOT Vermagic"
+        description: "Use SNAPSHOT config.buildinfo"
         type: boolean
         default: false
 
@@ -70,7 +66,6 @@ env:
   FIRMWARE_RELEASE: ${{ github.event.inputs.firmware_release }}
   TOOLCHAIN_RELEASE: ${{ github.event.inputs.toolchain_release }}
   TOOLCHAIN_TAG: toolchain
-  VERMAGIC: ${{ github.event.inputs.vermagic }}
   VERMAGIC_OPT: ${{ github.event.inputs.vermagic_opt }}
   TOKEN: ${{ secrets.GITHUB_TOKEN }}
   TZ: UTC
@@ -429,14 +424,57 @@ jobs:
       - name: Load Custom Configuration And Vermagic
         run: |
           set -e
-          snapshot_version="${OPENWRT_VERSION}"
-          release_version="${OPENWRT_VERSION}"
-          # Retry logic for downloading config via curl
+          if [[ "$VERMAGIC_OPT" == "true" ]]; then
+            version="${OPENWRT_VERSION}-SNAPSHOT"
+          else
+            version="${OPENWRT_VERSION}"
+          fi
+          cd $OPENWRT_ROOT_PATH
+
+          # Use the OFFICIAL config.buildinfo as the base .config instead of
+          # our own accumulated openwrt.config. This is the exact kernel
+          # configuration OpenWrt's own buildbots used for this
+          # release/target/subtarget (kernel version, drivers, every
+          # CONFIG_KERNEL_*/CONFIG_PACKAGE_kmod-* option), so building
+          # against it unmodified produces a kernel whose vermagic matches
+          # the official kmod packages exactly -- no forcing/faking needed.
+          # Previously we started from our own openwrt.config plus
+          # CONFIG_ALL=y, which pulled in a different, non-standard set of
+          # kernel options and produced a vermagic that never matched any
+          # official kmod build.
+          max_attempts=4
+          attempt=1
+          until curl -fsSL "https://downloads.openwrt.org/releases/${version}/targets/${DEVICE_TARGET}/${DEVICE_SUBTARGET}/config.buildinfo" -o .config; do
+            if [ $attempt -lt $max_attempts ]; then
+              echo "Download failed (attempt $attempt/$max_attempts). Retrying in 30 seconds..."
+              sleep 30
+              attempt=$((attempt + 1))
+            else
+              echo "ERROR: Failed to download config.buildinfo after $max_attempts attempts."
+              exit 1
+            fi
+          done
+
+          # config.buildinfo selects every official device profile for this
+          # subtarget at once (so the buildbots can build them all in one
+          # pass) -- drop that bulk selection and select just our own
+          # device. Every CONFIG_KERNEL_*/driver/kmod option is left
+          # untouched.
+          sed -i '/^CONFIG_TARGET_MULTI_PROFILE/d;/^CONFIG_TARGET_PER_DEVICE_ROOTFS/d;/^CONFIG_TARGET_ALL_PROFILES/d' .config
+          sed -i -E "/^CONFIG_TARGET(_DEVICE)?_${DEVICE_TARGET}_${DEVICE_SUBTARGET}_DEVICE_/d;/^CONFIG_TARGET_DEVICE_PACKAGES_${DEVICE_TARGET}_${DEVICE_SUBTARGET}_DEVICE_/d" .config
+          echo "CONFIG_TARGET_${DEVICE_TARGET}_${DEVICE_SUBTARGET}_DEVICE_notion_r281=y" >> .config
+
+          # Pull in our own userspace package/feature selections from
+          # config/$CONFIG_FILE (or a provided CONFIG_URL), but only the
+          # parts that don't affect the kernel: no CONFIG_KERNEL_*,
+          # CONFIG_PACKAGE_kmod-*, or CONFIG_TARGET_* lines. kmod packages
+          # are deliberately NOT built locally -- they come from the
+          # official kmods feed (matching vermagic exactly) via opkg after
+          # flashing instead.
           if [[ "$CONFIG_LINK" == "true" && -n "$CONFIG_URL" ]]; then
-            echo "Downloading config from $CONFIG_URL..."
-            max_attempts=4
+            echo "Downloading custom config from $CONFIG_URL..."
             attempt=1
-            until curl -fsSL "$CONFIG_URL" -o "$OPENWRT_ROOT_PATH/.config"; do
+            until curl -fsSL "$CONFIG_URL" -o /tmp/custom.config; do
               if [ $attempt -lt $max_attempts ]; then
                 echo "Download failed (attempt $attempt/$max_attempts). Retrying in 30 seconds..."
                 sleep 30
@@ -447,16 +485,18 @@ jobs:
               fi
             done
           else
-            cp ./config/$CONFIG_FILE $OPENWRT_ROOT_PATH/.config
+            cp $GITHUB_WORKSPACE/config/$CONFIG_FILE /tmp/custom.config
           fi
-          if [[ "$VERMAGIC_OPT" == "true" ]]; then
-            version="${snapshot_version}-SNAPSHOT"
-          else
-            version="${release_version}"
-          fi
-          kmods=$(curl -s https://downloads.openwrt.org/releases/${version}/targets/${DEVICE_TARGET}/${DEVICE_SUBTARGET}/kmods/ \
+          grep -E '^#?\s*CONFIG_(PACKAGE|FEED|DEVEL|IMAGEOPT|VERSIONOPT|VERSION_)' /tmp/custom.config \
+            | grep -v -E '^#?\s*CONFIG_PACKAGE_kmod-' \
+            >> .config
+
+          kmods=$(curl -s "https://downloads.openwrt.org/releases/${version}/targets/${DEVICE_TARGET}/${DEVICE_SUBTARGET}/kmods/" \
             | grep -oP '<td class="n"><a href="\K[^/]+|<td class="d">\K[^<]+' \
             | paste -d '|' - - | sort -t '|' -k2 | head -n1 | cut -d '|' -f1)
+          # Official feeds for this exact release/target/subtarget -- this
+          # is what makes `opkg install kmod-xxx` work after flashing,
+          # since our kernel's vermagic now matches these packages exactly.
           echo "src/gz openwrt_core https://downloads.openwrt.org/releases/${version}/targets/${DEVICE_TARGET}/${DEVICE_SUBTARGET}/packages" > ./custom/files/etc/opkg/distfeeds.conf
           echo "src/gz openwrt_base https://downloads.openwrt.org/releases/${version}/packages/${DEVICE_PLATFORM}/base" >> ./custom/files/etc/opkg/distfeeds.conf
           echo "src/gz openwrt_kmods https://downloads.openwrt.org/releases/${version}/targets/${DEVICE_TARGET}/${DEVICE_SUBTARGET}/kmods/${kmods}" >> ./custom/files/etc/opkg/distfeeds.conf
@@ -464,15 +504,10 @@ jobs:
           echo "src/gz openwrt_packages https://downloads.openwrt.org/releases/${version}/packages/${DEVICE_PLATFORM}/packages" >> ./custom/files/etc/opkg/distfeeds.conf
           echo "src/gz openwrt_routing https://downloads.openwrt.org/releases/${version}/packages/${DEVICE_PLATFORM}/routing" >> ./custom/files/etc/opkg/distfeeds.conf
           echo "src/gz openwrt_telephony https://downloads.openwrt.org/releases/${version}/packages/${DEVICE_PLATFORM}/telephony" >> ./custom/files/etc/opkg/distfeeds.conf
-          
-          cd $OPENWRT_ROOT_PATH
+
           grep -q '^CONFIG_VERSION_REPO=' ./.config \
             && sed -i "s|^CONFIG_VERSION_REPO=.*|CONFIG_VERSION_REPO=\"https://downloads.openwrt.org/releases/${version}\"|" ./.config \
             || echo -e "\nCONFIG_VERSION_REPO=\"https://downloads.openwrt.org/releases/${version}\"" >> ./.config
-          if [[ "$VERMAGIC" == "true" ]]; then
-            echo "$kmods" | sed 's/.*-//' > .vermagic
-            sed -i -e 's/^\(.\).*vermagic$/\1cp $(TOPDIR)\/.vermagic $(LINUX_DIR)\/.vermagic/' ./include/kernel-defaults.mk
-          fi
           make defconfig
       - name: Upload Config To Artifact
         uses: actions/upload-artifact@v7
