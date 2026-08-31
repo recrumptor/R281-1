@@ -534,6 +534,7 @@ jobs:
       - name: Load DIY
         run: |
           cp ./scripts/$DIY_SH $OPENWRT_ROOT_PATH/
+          rm -rf $OPENWRT_ROOT_PATH/custom
           mv ./custom $OPENWRT_ROOT_PATH/
           cd $OPENWRT_ROOT_PATH
           chmod +x ./$DIY_SH && ./$DIY_SH
