@@ -399,6 +399,18 @@ jobs:
           mkdir -p openwrt-ro openwrt workdir overlay
           sudo mount -o loop $TOOLCHAIN_IMAGE.img openwrt-ro
           sudo mount -t overlay overlay -o lowerdir=openwrt-ro,upperdir=overlay,workdir=workdir openwrt
+      - name: Sync Toolchain Version Check
+        run: |
+          cd $OPENWRT_ROOT_PATH
+          # OpenWrt удалит toolchain если .ver_check не совпадёт.
+          # Синхронизируем его с текущим git-репозиторием, чтобы сохранить SDK.
+          for stamp_dir in staging_dir/toolchain-*/stamp; do
+            [ -d "$stamp_dir" ] || continue
+            git log --format=%h -1 toolchain > "$stamp_dir/.ver_check"
+            echo "Synced .ver_check for $(basename $(dirname $stamp_dir))"
+          done
+          # Проверяем, что компилятор на месте
+          ls -la staging_dir/toolchain-*/bin/mipsel-openwrt-linux-musl-gcc
       - name: Load Custom Feeds
         run: |
           cp ./scripts/$FEEDS_SH $OPENWRT_ROOT_PATH/$FEEDS_SH
