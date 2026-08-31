@@ -1,111 +1,48 @@
-#
-# Copyright (c) 2023 LENAR
-#
-# This is free software, licensed under the MIT License.
-# See /LICENSE for more information.
-#
 name: Build OpenWrt Firmware
 
 on:
-  repository_dispatch:
   workflow_dispatch:
     inputs:
       version:
-        description: "OpenWrt Version (git tag on openwrt/openwrt, e.g. 24.10.8)"
+        description: "OpenWrt Version (e.g. 24.10.8)"
         type: string
         required: true
         default: "24.10.8"
       config_file:
         description: "Config Name"
         type: choice
-        required: true
         options:
           - openwrt.config
-      config_link:
-        description: "Use Config URL"
-        type: boolean
-        default: false
-      config_url:
-        description: "Config URL"
-        type: string
-        required: false
-        default: ""
+        default: "openwrt.config"
       diy:
         description: "DIY Script"
         type: choice
-        required: true
         options:
           - diy_v1.sh
           - diy_v2.sh
+        default: "diy_v1.sh"
       firmware_release:
         description: "Firmware Release"
-        type: boolean
-        default: false
-      toolchain_release:
-        description: "Toolchain Release"
-        type: boolean
-        default: true
-      vermagic_opt:
-        description: "Use SNAPSHOT config.buildinfo"
         type: boolean
         default: false
 
 env:
   SOURCE_URL: https://github.com/openwrt/openwrt
-  SOURCE_ORIGIN: https://github.com/openwrt/openwrt
   OPENWRT_VERSION: ${{ github.event.inputs.version }}
   SOURCE_TAG: v${{ github.event.inputs.version }}
-  SOURCE_BRANCH: build-${{ github.event.inputs.version }}
   R281_PATCH_DIR: patches/notion-r281
   FEEDS_SH: feeds.sh
   FEEDS_PKG_SH: feeds_pkg.sh
   CONFIG_FILE: ${{ github.event.inputs.config_file }}
-  CONFIG_LINK: ${{ github.event.inputs.config_link }}
-  CONFIG_URL: ${{ github.event.inputs.config_url }}
   DIY_SH: ${{ github.event.inputs.diy }}
   FIRMWARE_RELEASE: ${{ github.event.inputs.firmware_release }}
-  TOOLCHAIN_RELEASE: ${{ github.event.inputs.toolchain_release }}
-  TOOLCHAIN_TAG: toolchain
-  VERMAGIC_OPT: ${{ github.event.inputs.vermagic_opt }}
   TOKEN: ${{ secrets.GITHUB_TOKEN }}
   TZ: UTC
 
 jobs:
-  Toolchain:
+  Build:
     runs-on: ubuntu-22.04
-
-    outputs:
-      OPENWRT_ROOT_PATH: ${{ steps.clone.outputs.OPENWRT_ROOT_PATH }}
-      SOURCE_OWNER: ${{ steps.env.outputs.SOURCE_OWNER }}
-      SOURCE_REPO: ${{ steps.env.outputs.SOURCE_REPO }}
-      CURRENT_BRANCH: ${{ steps.env.outputs.CURRENT_BRANCH }}
-      DEVICE_NAME: ${{ steps.env.outputs.DEVICE_NAME }}
-      DEVICE_PLATFORM: ${{ steps.env.outputs.DEVICE_PLATFORM }}
-      DEVICE_TARGET: ${{ steps.env.outputs.DEVICE_TARGET }}
-      DEVICE_SUBTARGET: ${{ steps.env.outputs.DEVICE_SUBTARGET }}
-      TOOLCHAIN_IMAGE: ${{ steps.env.outputs.TOOLCHAIN_IMAGE }}
-      BUILD_DATE: ${{ steps.env.outputs.BUILD_DATE }}
-
     steps:
-      - name: Initialize Environment
-        run: |
-          sudo timedatectl set-timezone "$TZ"
-          
-          mkdir -p workspace
-          df -hT
-          ulimit -n 8192
-      - name: Maximize Build Space
-        uses: easimon/maximize-build-space@master
-        with:
-          root-reserve-mb: '4096'
-          temp-reserve-mb: '2048'
-          swap-size-mb: '2048'
-          remove-dotnet: 'true'
-          remove-android: 'true'
-          remove-haskell: 'true'
-          remove-codeql: 'true'
-          remove-docker-images: 'true'
-
       - name: Checkout
         uses: actions/checkout@v6
 
@@ -115,506 +52,94 @@ jobs:
         run: |
           sudo -E apt-get -qq update
           sudo -E apt-get -qq install -y \
-            ack antlr3 aria2 asciidoc autoconf automake autopoint binutils bison \
-            btrfs-progs build-essential bzip2 ca-certificates ccache cmake coreutils \
-            cpio curl device-tree-compiler fastjar flex g++-multilib gawk gcc-multilib \
-            gettext git git-core gperf gzip haveged help2man intltool jq libc6-dev-i386 \
-            libelf-dev libfuse-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev \
-            libmpfr-dev libncurses5-dev libncursesw5-dev libpython3-dev libreadline-dev \
-            libsigsegv2 libssl-dev libtool libz-dev lrzsz m4 mkisofs msmtp nano ninja-build p7zip \
-            p7zip-full patch patchelf pigz pkgconf python3 python3-pip python3-pyelftools \
-            python3-setuptools qemu-utils rsync scons squashfs-tools swig tar texinfo \
-            uglifyjs unzip upx upx-ucl vim wget xmlto xsltproc xxd xz-utils yasm zip \
-            zlib1g-dev zstd
+            build-essential ccache ecj fastjar file g++ gawk gettext git java-propose-classpath \
+            libelf-dev libncurses5-dev libncursesw5-dev libssl-dev python3 python3-distutils \
+            python3-setuptools rsync subversion swig time xsltproc binutils bzip2 diffutils \
+            findutils flex gawk gcc- getopt grep install libc-dev libz-dev make4.3 perl python3 \
+            rsync unzip util-linux wget which zlib1g-dev
           sudo -E apt-get -qq autoremove --purge
           sudo -E apt-get -qq clean
-          df -hT
-      - name: Clone Source Code
-        id: clone
+
+      - name: Clone OpenWrt
         run: |
-          git clone --single-branch $SOURCE_URL -b $SOURCE_TAG workspace/openwrt
-          cd workspace/openwrt
-          git config --global user.name "github-actions"
-          git config --global user.email "github-actions@github.com"
-          # Cloning a tag leaves us in detached HEAD; give it a real branch
-          # name so later steps (git symbolic-ref, release notes, etc.) work.
-          git checkout -b $SOURCE_BRANCH
-          echo "OPENWRT_ROOT_PATH=$PWD" >> $GITHUB_ENV
-          echo "OPENWRT_ROOT_PATH=$PWD" >> $GITHUB_OUTPUT
-      - name: Apply Notion R281 Device Support Patches
+          git clone --depth 1 --branch $SOURCE_TAG $SOURCE_URL openwrt
+          cd openwrt
+          git checkout -b build-$OPENWRT_VERSION
+
+      - name: Apply R281 Patches
         run: |
-          cd $OPENWRT_ROOT_PATH
+          cd openwrt
           for p in $GITHUB_WORKSPACE/$R281_PATCH_DIR/*.patch; do
-            echo "Applying $(basename "$p")"
             git am "$p"
           done
-      - name: Generate Toolchain Configuration
-        run: |
-          cd $OPENWRT_ROOT_PATH
-          # Use our minimal config ONLY to discover target/subtarget for SDK download
-          if [[ "$CONFIG_LINK" == "true" && -n "$CONFIG_URL" ]]; then
-            curl -s $CONFIG_URL -o .config
-          else
-            cp $GITHUB_WORKSPACE/config/$CONFIG_FILE .config
-          fi
-          # NO CONFIG_ALL here — we don't build anything in Toolchain job
-          make defconfig
-          export DEVICE_TARGET=$(grep 'CONFIG_TARGET_BOARD' .config | awk -F '"' '{print $2}')
-          export DEVICE_SUBTARGET=$(grep 'CONFIG_TARGET_SUBTARGET' .config | awk -F '"' '{print $2}')
-          echo "DEVICE_TARGET=$DEVICE_TARGET" >> $GITHUB_ENV
-          echo "DEVICE_TARGET=$DEVICE_TARGET" >> $GITHUB_OUTPUT
-          echo "DEVICE_SUBTARGET=$DEVICE_SUBTARGET" >> $GITHUB_ENV
-          echo "DEVICE_SUBTARGET=$DEVICE_SUBTARGET" >> $GITHUB_OUTPUT
-      - name: Generate Variables
-        id: env
-        run: |
-          export SOURCE_OWNER=$(echo $SOURCE_URL | awk -F '/' '{print $(NF-1)}')
-          echo "SOURCE_OWNER=$SOURCE_OWNER" >> $GITHUB_ENV
-          echo "SOURCE_OWNER=$SOURCE_OWNER" >> $GITHUB_OUTPUT
-          export SOURCE_REPO=$(echo $SOURCE_URL | awk -F '/' '{print $NF}' | sed 's/\.git$//')
-          echo "SOURCE_REPO=$SOURCE_REPO" >> $GITHUB_ENV
-          echo "SOURCE_REPO=$SOURCE_REPO" >> $GITHUB_OUTPUT
-          export CURRENT_BRANCH=$(git symbolic-ref --short HEAD)
-          echo "CURRENT_BRANCH=$CURRENT_BRANCH" >> $GITHUB_ENV
-          echo "CURRENT_BRANCH=$CURRENT_BRANCH" >> $GITHUB_OUTPUT
-          cd $OPENWRT_ROOT_PATH
-          export DEVICE_NAME=$(grep 'CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/')
-          echo "DEVICE_NAME=$DEVICE_NAME" >> $GITHUB_ENV
-          echo "DEVICE_NAME=$DEVICE_NAME" >> $GITHUB_OUTPUT
-          export DEVICE_PLATFORM=$(grep 'CONFIG_TARGET_ARCH_PACKAGES' .config | awk -F '"' '{print $2}')
-          echo "DEVICE_PLATFORM=$DEVICE_PLATFORM" >> $GITHUB_ENV
-          echo "DEVICE_PLATFORM=$DEVICE_PLATFORM" >> $GITHUB_OUTPUT
-          export DEVICE_TARGET=$(grep 'CONFIG_TARGET_BOARD' .config | awk -F '"' '{print $2}')
-          echo "DEVICE_TARGET=$DEVICE_TARGET" >> $GITHUB_ENV
-          echo "DEVICE_TARGET=$DEVICE_TARGET" >> $GITHUB_OUTPUT
-          export DEVICE_SUBTARGET=$(grep 'CONFIG_TARGET_SUBTARGET' .config | awk -F '"' '{print $2}')
-          echo "DEVICE_SUBTARGET=$DEVICE_SUBTARGET" >> $GITHUB_ENV
-          echo "DEVICE_SUBTARGET=$DEVICE_SUBTARGET" >> $GITHUB_OUTPUT
-          export TOOLCHAIN_IMAGE="toolchain-$SOURCE_OWNER-$SOURCE_REPO-$SOURCE_BRANCH-$DEVICE_TARGET-$DEVICE_SUBTARGET"
-          echo "TOOLCHAIN_IMAGE=$TOOLCHAIN_IMAGE" >> $GITHUB_ENV
-          echo "TOOLCHAIN_IMAGE=$TOOLCHAIN_IMAGE" >> $GITHUB_OUTPUT
-          export BUILD_DATE=$(date +"%Y-%m-%d-%H%M")
-          echo "BUILD_DATE=$BUILD_DATE" >> $GITHUB_ENV
-          echo "BUILD_DATE=$BUILD_DATE" >> $GITHUB_OUTPUT
-      - name: Download Prebuilt Toolchain
-        run: |
-          cd $OPENWRT_ROOT_PATH
-          # Rather than compiling tools/toolchain from source ourselves (which
-          # kept failing on ninja/lzma/libtool/bc -- ancient host-tool code
-          # tripping over newer Ubuntu/gcc defaults on GitHub's runner image),
-          # grab the official prebuilt SDK archive OpenWrt's own buildbots
-          # produce for this exact release/target/subtarget. Unlike the plain
-          # "openwrt-toolchain-*" archive (which only contains the mips
-          # cross-compiler, staging_dir/toolchain-*), the SDK is a standalone
-          # package-building environment and so it also bundles a ready-to-use
-          # staging_dir/host with all the host tools we kept fighting
-          # (m4, automake, autoconf, libtool, ninja, bc, ...), built in an
-          # environment that demonstrably doesn't hit these bugs. This also
-          # gives the best possible vermagic match, since it's the literal
-          # toolchain OpenWrt used to build the official kmod packages for
-          # this release.
-          BASE_URL="https://downloads.openwrt.org/releases/$OPENWRT_VERSION/targets/$DEVICE_TARGET/$DEVICE_SUBTARGET"
-          SDK_FILE=$(curl -fsSL "$BASE_URL/" | grep -oP 'openwrt-sdk-[^"]+\.tar\.(zst|xz)' | head -n1)
-          if [ -z "$SDK_FILE" ]; then
-            echo "ERROR: could not find an official openwrt-sdk archive at $BASE_URL/"
-            exit 1
-          fi
-          echo "Downloading $SDK_FILE"
-          curl -fL --retry 5 --retry-delay 5 -o "/tmp/$SDK_FILE" "$BASE_URL/$SDK_FILE"
-          mkdir -p /tmp/sdk-extract
-          case "$SDK_FILE" in
-            *.tar.zst) tar --zstd -xf "/tmp/$SDK_FILE" -C /tmp/sdk-extract --strip-components=1 ;;
-            *.tar.xz)  tar -xf "/tmp/$SDK_FILE" -C /tmp/sdk-extract --strip-components=1 ;;
-          esac
-          echo "--- extracted SDK top level ---"
-          ls -la /tmp/sdk-extract
-          if [ ! -d /tmp/sdk-extract/staging_dir ]; then
-            echo "ERROR: extracted SDK has no staging_dir/ at its top level"
-            exit 1
-          fi
-          # mv (a same-filesystem rename) instead of cp -a: cp -a's
-          # --preserve=ownership hit "Permission denied" on a handful of
-          # files (tar/find/patch/xargs) since we're not root and can't
-          # chown to the archive's original owner. mv sidesteps that
-          # entirely -- it doesn't need to copy or preserve anything.
-          rm -rf staging_dir
-          mv /tmp/sdk-extract/staging_dir staging_dir
-          rm -rf /tmp/sdk-extract "/tmp/$SDK_FILE"
-          rm -rf .config* dl bin
 
-          # SDK собран со старой glibc, а хост (Ubuntu 22.04) — с 2.35.
-          # OpenWrt пересобирает host-tools (ucert, libubox) под текущую систему,
-          # и при запуске bundled RPATH тянет старую libc из SDK.
-          # Решение: заменить core glibc libs в SDK на симлинки на системные.
-          # Старые бинарники SDK при этом продолжают работать (glibc backward compatible).
-          echo "Replacing bundled glibc core libs with symlinks to system ones"
-          for lib in ld-linux-x86-64 libc libm libdl libpthread librt libresolv libnsl libutil; do
-            for f in staging_dir/host/lib/${lib}*.so*; do
-              [ -e "$f" ] || continue
-              case "$f" in
-                *.a|*.la) continue ;;
-              esac
-              bak="${f}.sdk-bak"
-              mv "$f" "$bak"
-              sysfile=$(find /lib/x86_64-linux-gnu /lib64 -maxdepth 1 -name "$(basename "$f")" -print -quit 2>/dev/null)
-              if [ -n "$sysfile" ]; then
-                ln -s "$sysfile" "$f"
-                echo "  $(basename "$f") -> $sysfile"
-              else
-                mv "$bak" "$f"
-                echo "  WARNING: system $(basename "$f") not found, keeping bundled"
-              fi
-            done
-          done
-
-          # Проверяем, что базовые утилиты из SDK всё ещё работают
-          echo "Testing host tools after glibc swap..."
-          staging_dir/host/bin/sed --version >/dev/null 2>&1 && echo "  sed: OK" || { echo "  sed: FAIL"; exit 1; }
-          staging_dir/host/bin/find --version >/dev/null 2>&1 && echo "  find: OK" || { echo "  find: FAIL"; exit 1; }
-          staging_dir/host/bin/xargs --version >/dev/null 2>&1 && echo "  xargs: OK" || { echo "  xargs: FAIL"; exit 1; }
-      - name: Generate Toolchain Image
+      - name: Download Official Config
         run: |
-          cd workspace
-          mksquashfs openwrt $TOOLCHAIN_IMAGE -force-gid 1001 -force-uid 1001 -comp zstd -Xcompression-level 19
-          mkdir -p $GITHUB_WORKSPACE/output
-          split -d -b 1G $TOOLCHAIN_IMAGE $GITHUB_WORKSPACE/output/$TOOLCHAIN_IMAGE.img.
-          rm -f $TOOLCHAIN_IMAGE
-          ls -lh $GITHUB_WORKSPACE/output
-      - name: Upload Toolchain Image To Artifact
-        if: ${{ env.TOOLCHAIN_RELEASE != 'true' }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: ${{ env.TOOLCHAIN_IMAGE }}
-          path: output
-          retention-days: 7
-
-      - name: Delete Old Toolchain Assets From Release
-        if: ${{ env.TOOLCHAIN_RELEASE == 'true' }}
-        uses: mknejp/delete-release-assets@v1
-        with:
-          token: ${{ env.TOKEN }}
-          tag: ${{ env.TOOLCHAIN_TAG }}
-          assets: toolchain-${{ env.TOOLCHAIN_IMAGE }}.*
-          fail-if-no-assets: false
-          fail-if-no-release: false
-
-      - name: Upload Toolchain Image To Release
-        if: ${{ env.TOOLCHAIN_RELEASE == 'true' }}
-        uses: ncipollo/release-action@v1
-        with:
-          token: ${{ env.TOKEN }}
-          name: toolchain-image
-          commit: ${{ env.CURRENT_BRANCH }}
-          tag: ${{ env.TOOLCHAIN_TAG }}
-          artifacts: output/*
-          replacesArtifacts: true
-          allowUpdates: true
-          prerelease: true
-
-  Build:
-    needs: [Toolchain]
-    runs-on: ubuntu-22.04
-
-    steps:
-      - name: Initialize Environment
-        run: |
-          sudo timedatectl set-timezone "$TZ"
-          
-          mkdir -p workspace
-          df -hT
-          ulimit -n 8192
-      - name: Restore Variables
-        run: |
-          echo "OPENWRT_ROOT_PATH=${{ needs.Toolchain.outputs.OPENWRT_ROOT_PATH }}" >> $GITHUB_ENV
-          echo "SOURCE_OWNER=${{ needs.Toolchain.outputs.SOURCE_OWNER }}" >> $GITHUB_ENV
-          echo "SOURCE_REPO=${{ needs.Toolchain.outputs.SOURCE_REPO }}" >> $GITHUB_ENV
-          echo "CURRENT_BRANCH=${{ needs.Toolchain.outputs.CURRENT_BRANCH }}" >> $GITHUB_ENV
-          echo "DEVICE_NAME=${{ needs.Toolchain.outputs.DEVICE_NAME }}" >> $GITHUB_ENV
-          echo "DEVICE_PLATFORM=${{ needs.Toolchain.outputs.DEVICE_PLATFORM }}" >> $GITHUB_ENV
-          echo "DEVICE_TARGET=${{ needs.Toolchain.outputs.DEVICE_TARGET }}" >> $GITHUB_ENV
-          echo "DEVICE_SUBTARGET=${{ needs.Toolchain.outputs.DEVICE_SUBTARGET }}" >> $GITHUB_ENV
-          echo "TOOLCHAIN_IMAGE=${{ needs.Toolchain.outputs.TOOLCHAIN_IMAGE }}" >> $GITHUB_ENV
-          echo "BUILD_DATE=${{ needs.Toolchain.outputs.BUILD_DATE }}" >> $GITHUB_ENV
-      - name: Maximize Build Space
-        uses: easimon/maximize-build-space@master
-        with:
-          root-reserve-mb: '4096'
-          temp-reserve-mb: '2048'
-          swap-size-mb: '2048'
-          remove-dotnet: 'true'
-          remove-android: 'true'
-          remove-haskell: 'true'
-          remove-codeql: 'true'
-          remove-docker-images: 'true'
-
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Install Packages
-        env:
-          DEBIAN_FRONTEND: noninteractive
-        run: |
-          sudo -E apt-get -qq update
-          sudo -E apt-get -qq install -y \
-            ack antlr3 aria2 asciidoc autoconf automake autopoint binutils bison \
-            btrfs-progs build-essential bzip2 ca-certificates ccache cmake coreutils \
-            cpio curl device-tree-compiler fastjar flex g++-multilib gawk gcc-multilib \
-            gettext git git-core gperf gzip haveged help2man intltool jq libc6-dev-i386 \
-            libelf-dev libfuse-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev \
-            libmpfr-dev libncurses5-dev libncursesw5-dev libpython3-dev libreadline-dev \
-            libsigsegv2 libssl-dev libtool libz-dev lrzsz m4 mkisofs msmtp nano ninja-build p7zip \
-            p7zip-full patch patchelf pigz pkgconf python3 python3-pip python3-pyelftools \
-            python3-setuptools qemu-utils rsync scons squashfs-tools swig tar texinfo \
-            uglifyjs unzip upx upx-ucl vim wget xmlto xsltproc xxd xz-utils yasm zip \
-            zlib1g-dev zstd
-          sudo -E apt-get -qq autoremove --purge
-          sudo -E apt-get -qq clean
-          df -hT
-      - name: Download Toolchain Image From Artifact
-        if: ${{ env.TOOLCHAIN_RELEASE != 'true' }}
-        uses: actions/download-artifact@v8
-        with:
-          name: ${{ env.TOOLCHAIN_IMAGE }}
-          path: workspace
-
-      - name: Download Toolchain Image From Release
-        if: ${{ env.TOOLCHAIN_RELEASE == 'true' }}
-        uses: robinraju/release-downloader@v1.12
-        with:
-          token: ${{ env.TOKEN }}
-          repository: ${{ GITHUB.REPOSITORY }}
-          fileName: ${{ env.TOOLCHAIN_IMAGE }}.img.*
-          tag: ${{ env.TOOLCHAIN_TAG }}
-          out-file-path: workspace
-
-      - name: Prepare Toolchain Image
-        run: |
-          cd workspace
-          for i in {00..09}; do
-            if [ -f "$TOOLCHAIN_IMAGE.img.$i" ]; then
-              cat $TOOLCHAIN_IMAGE.img.$i >> $TOOLCHAIN_IMAGE.img
-              rm -f $TOOLCHAIN_IMAGE.img.$i
-            fi
-          done
-          mkdir -p openwrt-ro openwrt workdir overlay
-          sudo mount -o loop $TOOLCHAIN_IMAGE.img openwrt-ro
-          sudo mount -t overlay overlay -o lowerdir=openwrt-ro,upperdir=overlay,workdir=workdir openwrt
-      - name: Sync Toolchain Version Check
-        run: |
-          cd $OPENWRT_ROOT_PATH
-          # OpenWrt удалит toolchain если .ver_check не совпадёт.
-          # Синхронизируем его с текущим git-репозиторием, чтобы сохранить SDK.
-          for stamp_dir in staging_dir/toolchain-*/stamp; do
-            [ -d "$stamp_dir" ] || continue
-            git log --format=%h -1 toolchain > "$stamp_dir/.ver_check"
-            echo "Synced .ver_check for $(basename $(dirname $stamp_dir))"
-          done
-          # Проверяем, что компилятор на месте
-          ls -la staging_dir/toolchain-*/bin/mipsel-openwrt-linux-musl-gcc
-      - name: Load Custom Feeds
-        run: |
-          cp ./scripts/$FEEDS_SH $OPENWRT_ROOT_PATH/$FEEDS_SH
-          cd $OPENWRT_ROOT_PATH
-          chmod +x ./$FEEDS_SH && ./$FEEDS_SH
-      - name: Install Feeds with Retry on Network Errors
-        run: |
-          cp ./scripts/$FEEDS_PKG_SH $OPENWRT_ROOT_PATH/$FEEDS_PKG_SH
-          cd $OPENWRT_ROOT_PATH
-          set -e
-          try_update_feeds() {
-            ./scripts/feeds clean
-            ./scripts/feeds update -a
-            chmod +x ./$FEEDS_PKG_SH && ./$FEEDS_PKG_SH
-            ./scripts/feeds update -a
-            ./scripts/feeds install -a
-          }
-          max_attempts=4
-          attempt=1
-          until try_update_feeds; do
-            if [ $attempt -lt $max_attempts ]; then
-              echo "Feeds update failed (attempt $attempt/$max_attempts). Retrying in 30 seconds..."
-              sleep 30
-              attempt=$((attempt+1))
-            else
-              echo "ERROR: Feeds update failed after $max_attempts attempts."
-              exit 1
-            fi
-          done
-      - name: Load Custom Configuration And Vermagic
-        run: |
-          set -e
-          if [[ "$VERMAGIC_OPT" == "true" ]]; then
-            version="${OPENWRT_VERSION}-SNAPSHOT"
-          else
-            version="${OPENWRT_VERSION}"
-          fi
-          cd $OPENWRT_ROOT_PATH
-
-          # Use the OFFICIAL config.buildinfo as the base .config instead of
-          # our own accumulated openwrt.config. This is the exact kernel
-          # configuration OpenWrt's own buildbots used for this
-          # release/target/subtarget (kernel version, drivers, every
-          # CONFIG_KERNEL_*/CONFIG_PACKAGE_kmod-* option), so building
-          # against it unmodified produces a kernel whose vermagic matches
-          # the official kmod packages exactly -- no forcing/faking needed.
-          # Previously we started from our own openwrt.config plus
-          # CONFIG_ALL=y, which pulled in a different, non-standard set of
-          # kernel options and produced a vermagic that never matched any
-          # official kmod build.
-          max_attempts=4
-          attempt=1
-          until curl -fsSL "https://downloads.openwrt.org/releases/${version}/targets/${DEVICE_TARGET}/${DEVICE_SUBTARGET}/config.buildinfo" -o .config; do
-            if [ $attempt -lt $max_attempts ]; then
-              echo "Download failed (attempt $attempt/$max_attempts). Retrying in 30 seconds..."
-              sleep 30
-              attempt=$((attempt + 1))
-            else
-              echo "ERROR: Failed to download config.buildinfo after $max_attempts attempts."
-              exit 1
-            fi
-          done
-
-          # config.buildinfo selects every official device profile for this
-          # subtarget at once (so the buildbots can build them all in one
-          # pass) -- drop that bulk selection and select just our own
-          # device. Every CONFIG_KERNEL_*/driver/kmod option is left
-          # untouched.
+          cd openwrt
+          curl -fsSL "https://downloads.openwrt.org/releases/${OPENWRT_VERSION}/targets/ramips/mt7621/config.buildinfo" -o .config
+          # Убираем сборку всех профилей, оставляем только R281
           sed -i '/^CONFIG_TARGET_MULTI_PROFILE/d;/^CONFIG_TARGET_PER_DEVICE_ROOTFS/d;/^CONFIG_TARGET_ALL_PROFILES/d' .config
-          sed -i -E "/^CONFIG_TARGET(_DEVICE)?_${DEVICE_TARGET}_${DEVICE_SUBTARGET}_DEVICE_/d;/^CONFIG_TARGET_DEVICE_PACKAGES_${DEVICE_TARGET}_${DEVICE_SUBTARGET}_DEVICE_/d" .config
-          echo "CONFIG_TARGET_${DEVICE_TARGET}_${DEVICE_SUBTARGET}_DEVICE_notion_r281=y" >> .config
+          sed -i -E '/^CONFIG_TARGET(_DEVICE)?_ramips_mt7621_DEVICE_/d;/^CONFIG_TARGET_DEVICE_PACKAGES_ramips_mt7621_DEVICE_/d' .config
+          echo "CONFIG_TARGET_ramips_mt7621_DEVICE_notion_r281=y" >> .config
 
-          # Pull in our own userspace package/feature selections from
-          # config/$CONFIG_FILE (or a provided CONFIG_URL), but only the
-          # parts that don't affect the kernel: no CONFIG_KERNEL_*,
-          # CONFIG_PACKAGE_kmod-*, or CONFIG_TARGET_* lines. kmod packages
-          # are deliberately NOT built locally -- they come from the
-          # official kmods feed (matching vermagic exactly) via opkg after
-          # flashing instead.
-          if [[ "$CONFIG_LINK" == "true" && -n "$CONFIG_URL" ]]; then
-            echo "Downloading custom config from $CONFIG_URL..."
-            attempt=1
-            until curl -fsSL "$CONFIG_URL" -o /tmp/custom.config; do
-              if [ $attempt -lt $max_attempts ]; then
-                echo "Download failed (attempt $attempt/$max_attempts). Retrying in 30 seconds..."
-                sleep 30
-                attempt=$((attempt + 1))
-              else
-                echo "ERROR: Failed to download config after $max_attempts attempts."
-                exit 1
-              fi
-            done
-          else
-            cp $GITHUB_WORKSPACE/config/$CONFIG_FILE /tmp/custom.config
-          fi
-          grep -E '^#?\s*CONFIG_(PACKAGE|FEED|DEVEL|IMAGEOPT|VERSIONOPT|VERSION_)' /tmp/custom.config \
+      - name: Add Userspace Packages
+        run: |
+          cd openwrt
+          # Добавляем только userspace-пакеты из вашего конфига (без kmod, без kernel)
+          grep -E '^#?\s*CONFIG_(PACKAGE|FEED|IMAGEOPT|VERSIONOPT|VERSION_|DEVEL)' \
+            $GITHUB_WORKSPACE/config/$CONFIG_FILE \
             | grep -v -E '^#?\s*CONFIG_PACKAGE_kmod-' \
+            | grep -v -E '^#?\s*CONFIG_KERNEL_' \
             >> .config
 
-          kmods=$(curl -s "https://downloads.openwrt.org/releases/${version}/targets/${DEVICE_TARGET}/${DEVICE_SUBTARGET}/kmods/" \
-            | grep -oP '<td class="n"><a href="\K[^/]+|<td class="d">\K[^<]+' \
-            | paste -d '|' - - | sort -t '|' -k2 | head -n1 | cut -d '|' -f1)
-          # Official feeds for this exact release/target/subtarget -- this
-          # is what makes `opkg install kmod-xxx` work after flashing,
-          # since our kernel's vermagic now matches these packages exactly.
-          mkdir -p ./custom/files/etc/opkg
-          echo "src/gz openwrt_core https://downloads.openwrt.org/releases/${version}/targets/${DEVICE_TARGET}/${DEVICE_SUBTARGET}/packages" > ./custom/files/etc/opkg/distfeeds.conf
-          echo "src/gz openwrt_base https://downloads.openwrt.org/releases/${version}/packages/${DEVICE_PLATFORM}/base" >> ./custom/files/etc/opkg/distfeeds.conf
-          echo "src/gz openwrt_kmods https://downloads.openwrt.org/releases/${version}/targets/${DEVICE_TARGET}/${DEVICE_SUBTARGET}/kmods/${kmods}" >> ./custom/files/etc/opkg/distfeeds.conf
-          echo "src/gz openwrt_luci https://downloads.openwrt.org/releases/${version}/packages/${DEVICE_PLATFORM}/luci" >> ./custom/files/etc/opkg/distfeeds.conf
-          echo "src/gz openwrt_packages https://downloads.openwrt.org/releases/${version}/packages/${DEVICE_PLATFORM}/packages" >> ./custom/files/etc/opkg/distfeeds.conf
-          echo "src/gz openwrt_routing https://downloads.openwrt.org/releases/${version}/packages/${DEVICE_PLATFORM}/routing" >> ./custom/files/etc/opkg/distfeeds.conf
-          echo "src/gz openwrt_telephony https://downloads.openwrt.org/releases/${version}/packages/${DEVICE_PLATFORM}/telephony" >> ./custom/files/etc/opkg/distfeeds.conf
+      - name: Setup Feeds
+        run: |
+          cp $GITHUB_WORKSPACE/scripts/$FEEDS_SH openwrt/feeds.sh
+          cd openwrt
+          chmod +x feeds.sh && ./feeds.sh
+          ./scripts/feeds update -a
+          cp $GITHUB_WORKSPACE/scripts/$FEEDS_PKG_SH feeds_pkg.sh
+          chmod +x feeds_pkg.sh && ./feeds_pkg.sh
+          ./scripts/feeds install -a
 
-          grep -q '^CONFIG_VERSION_REPO=' ./.config \
-            && sed -i "s|^CONFIG_VERSION_REPO=.*|CONFIG_VERSION_REPO=\"https://downloads.openwrt.org/releases/${version}\"|" ./.config \
-            || echo -e "\nCONFIG_VERSION_REPO=\"https://downloads.openwrt.org/releases/${version}\"" >> ./.config
+      - name: Generate distfeeds.conf
+        run: |
+          cd openwrt
           make defconfig
-      - name: Upload Config To Artifact
+          DEVICE_PLATFORM=$(grep 'CONFIG_TARGET_ARCH_PACKAGES' .config | awk -F '"' '{print $2}')
+          KMODS=$(curl -s "https://downloads.openwrt.org/releases/${OPENWRT_VERSION}/targets/ramips/mt7621/kmods/" \
+            | grep -oP 'href="\K[0-9][^"]+' | sort | tail -n1)
+          mkdir -p files/etc/opkg
+          cat <<EOF > files/etc/opkg/distfeeds.conf
+          src/gz openwrt_core https://downloads.openwrt.org/releases/${OPENWRT_VERSION}/targets/ramips/mt7621/packages
+          src/gz openwrt_base https://downloads.openwrt.org/releases/${OPENWRT_VERSION}/packages/${DEVICE_PLATFORM}/base
+          src/gz openwrt_kmods https://downloads.openwrt.org/releases/${OPENWRT_VERSION}/targets/ramips/mt7621/kmods/${KMODS}
+          src/gz openwrt_luci https://downloads.openwrt.org/releases/${OPENWRT_VERSION}/packages/${DEVICE_PLATFORM}/luci
+          src/gz openwrt_packages https://downloads.openwrt.org/releases/${OPENWRT_VERSION}/packages/${DEVICE_PLATFORM}/packages
+          src/gz openwrt_routing https://downloads.openwrt.org/releases/${OPENWRT_VERSION}/packages/${DEVICE_PLATFORM}/routing
+          src/gz openwrt_telephony https://downloads.openwrt.org/releases/${OPENWRT_VERSION}/packages/${DEVICE_PLATFORM}/telephony
+          EOF
+
+      - name: Run DIY
+        run: |
+          cp $GITHUB_WORKSPACE/scripts/$DIY_SH openwrt/
+          mv $GITHUB_WORKSPACE/custom openwrt/
+          cd openwrt
+          chmod +x $DIY_SH && ./$DIY_SH
+
+      - name: Download Sources
+        run: |
+          cd openwrt
+          make download -j8 || make download -j1 V=s
+
+      - name: Compile
+        run: |
+          cd openwrt
+          make -j$(nproc) || make -j1 V=s
+
+      - name: Upload Firmware
         uses: actions/upload-artifact@v7
         with:
-          name: Config
-          path: ${{ env.OPENWRT_ROOT_PATH }}/.config
-          include-hidden-files: true
+          name: openwrt-ramips-mt7621-r281-${{ github.event.inputs.version }}
+          path: openwrt/bin/targets/ramips/mt7621/
           retention-days: 7
-
-      - name: Load DIY
-        run: |
-          cp ./scripts/$DIY_SH $OPENWRT_ROOT_PATH/
-          rm -rf $OPENWRT_ROOT_PATH/custom
-          mv ./custom $OPENWRT_ROOT_PATH/
-          cd $OPENWRT_ROOT_PATH
-          chmod +x ./$DIY_SH && ./$DIY_SH
-      - name: Download Packages
-        id: download
-        run: |
-          cd $OPENWRT_ROOT_PATH
-          make download -j10 SHELL=/bin/bash || make download -j10 V=s SHELL=/bin/bash
-          find dl -size -1024c -exec ls -l {} \;
-          find dl -size -1024c -exec rm -f {} \;
-      - name: Fix SDK Toolchain Version Check
-        run: |
-          cd $OPENWRT_ROOT_PATH
-          # OpenWrt сравнивает git-хеш папки toolchain/ с .ver_check в SDK.
-          # Если не совпадает — удаляет весь prebuilt toolchain. Синхронизируем.
-          for ver_check in staging_dir/toolchain-*/stamp/.ver_check; do
-            [ -f "$ver_check" ] || continue
-            tc_name=$(basename $(dirname $(dirname "$ver_check")))
-            git log --format=%h -1 "$tc_name" > "$ver_check"
-            echo "Fixed .ver_check for $tc_name: $(cat $ver_check)"
-          done
-          # Проверяем, что компилятор на месте
-          ls -la staging_dir/toolchain-*/bin/mipsel-openwrt-linux-musl-gcc
-      - name: Compile Packages
-        run: |
-          cd $OPENWRT_ROOT_PATH
-          echo -e "$(nproc) Thread Compile"
-          
-          make buildinfo
-          make diffconfig buildversion feedsversion
-          make target/compile -j$(($(nproc) + 1)) IGNORE_ERRORS="m n" BUILD_LOG=1 SHELL=/bin/bash || \
-          yes n | make target/compile -j1 V=s IGNORE_ERRORS=1 SHELL=/bin/bash
-          make package/compile -j$(($(nproc) + 1)) IGNORE_ERRORS=1 SHELL=/bin/bash || make package/compile -j1 V=s IGNORE_ERRORS=1 SHELL=/bin/bash
-          make package/index
-      - name: Generate Firmware
-        id: generate
-        run: |
-          cd $OPENWRT_ROOT_PATH
-          make package/install -j$(($(nproc) + 1)) SHELL=/bin/bash || make package/install -j1 V=s SHELL=/bin/bash
-          make target/install -j$(($(nproc) + 1)) SHELL=/bin/bash || make target/install -j1 V=s SHELL=/bin/bash
-          make json_overview_image_info
-          make checksum
-      - name: Upload Bin To Artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: ${{ env.SOURCE_REPO }}-${{ env.DEVICE_NAME }}-${{ env.BUILD_DATE }}
-          path: ${{ env.OPENWRT_ROOT_PATH }}/bin
-          retention-days: 7
-
-      - name: Organize Files
-        if: ${{ env.FIRMWARE_RELEASE == 'true' }}
-        run: |
-          cd $OPENWRT_ROOT_PATH/bin/targets/$DEVICE_TARGET/$DEVICE_SUBTARGET
-          rm -rf packages feeds.buildinfo profiles.json version.buildinfo
-          df -hT $PWD
-      - name: Deploy Files To Release
-        if: ${{ env.FIRMWARE_RELEASE == 'true' }}
-        uses: ncipollo/release-action@v1
-        with:
-          token: ${{ env.TOKEN }}
-          name: ${{ env.SOURCE_REPO }}_${{ env.SOURCE_BRANCH }}
-          commit: ${{ env.CURRENT_BRANCH }}
-          tag: ${{ env.SOURCE_REPO }}_${{ env.SOURCE_BRANCH }}
-          artifacts: ${{ env.OPENWRT_ROOT_PATH }}/bin/targets/${{ env.DEVICE_TARGET }}/${{ env.DEVICE_SUBTARGET }}/*
-          replacesArtifacts: true
-          allowUpdates: true
-          prerelease: false
-          body: |
-            ### Build Information
-            ---
-            - Source Code: ${{ env.SOURCE_URL }}
-            - Source Code Branch: ${{ env.SOURCE_BRANCH }}
-            - Device Platform: ${{ env.DEVICE_PLATFORM }}
-            - Device Target: ${{ env.DEVICE_TARGET }}
-            - Device Subtarget: ${{ env.DEVICE_SUBTARGET }}
-            - Device Name: ${{ env.DEVICE_NAME }}
-            - Build Date: ${{ env.BUILD_DATE }}
