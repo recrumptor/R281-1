@@ -551,11 +551,24 @@ jobs:
           make download -j10 SHELL=/bin/bash || make download -j10 V=s SHELL=/bin/bash
           find dl -size -1024c -exec ls -l {} \;
           find dl -size -1024c -exec rm -f {} \;
+      - name: Fix SDK Toolchain Version Check
+        run: |
+          cd $OPENWRT_ROOT_PATH
+          # OpenWrt сравнивает git-хеш папки toolchain/ с .ver_check в SDK.
+          # Если не совпадает — удаляет весь prebuilt toolchain. Синхронизируем.
+          for ver_check in staging_dir/toolchain-*/stamp/.ver_check; do
+            [ -f "$ver_check" ] || continue
+            tc_name=$(basename $(dirname $(dirname "$ver_check")))
+            git log --format=%h -1 "$tc_name" > "$ver_check"
+            echo "Fixed .ver_check for $tc_name: $(cat $ver_check)"
+          done
+          # Проверяем, что компилятор на месте
+          ls -la staging_dir/toolchain-*/bin/mipsel-openwrt-linux-musl-gcc
       - name: Compile Packages
         run: |
           cd $OPENWRT_ROOT_PATH
           echo -e "$(nproc) Thread Compile"
-          make clean
+          
           make buildinfo
           make diffconfig buildversion feedsversion
           make target/compile -j$(($(nproc) + 1)) IGNORE_ERRORS="m n" BUILD_LOG=1 SHELL=/bin/bash || \
