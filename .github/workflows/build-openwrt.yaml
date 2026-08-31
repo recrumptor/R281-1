@@ -151,26 +151,20 @@ jobs:
       - name: Generate Toolchain Configuration
         run: |
           cd $OPENWRT_ROOT_PATH
-          # Step 1: определяем target/subtarget из локального конфига
+          # Use our minimal config ONLY to discover target/subtarget for SDK download
           if [[ "$CONFIG_LINK" == "true" && -n "$CONFIG_URL" ]]; then
             curl -s $CONFIG_URL -o .config
           else
             cp $GITHUB_WORKSPACE/config/$CONFIG_FILE .config
           fi
+          # NO CONFIG_ALL here — we don't build anything in Toolchain job
           make defconfig
           export DEVICE_TARGET=$(grep 'CONFIG_TARGET_BOARD' .config | awk -F '"' '{print $2}')
           export DEVICE_SUBTARGET=$(grep 'CONFIG_TARGET_SUBTARGET' .config | awk -F '"' '{print $2}')
           echo "DEVICE_TARGET=$DEVICE_TARGET" >> $GITHUB_ENV
+          echo "DEVICE_TARGET=$DEVICE_TARGET" >> $GITHUB_OUTPUT
           echo "DEVICE_SUBTARGET=$DEVICE_SUBTARGET" >> $GITHUB_ENV
-          
-          # Step 2: скачиваем официальный config.buildinfo
-          curl -fsSL "https://downloads.openwrt.org/releases/${OPENWRT_VERSION}/targets/${DEVICE_TARGET}/${DEVICE_SUBTARGET}/config.buildinfo" -o .config
-          
-          # Step 3: настраиваем только под notion_r281
-          sed -i '/^CONFIG_TARGET_MULTI_PROFILE/d;/^CONFIG_TARGET_PER_DEVICE_ROOTFS/d;/^CONFIG_TARGET_ALL_PROFILES/d' .config
-          sed -i -E "/^CONFIG_TARGET(_DEVICE)?_${DEVICE_TARGET}_${DEVICE_SUBTARGET}_DEVICE_/d;/^CONFIG_TARGET_DEVICE_PACKAGES_${DEVICE_TARGET}_${DEVICE_SUBTARGET}_DEVICE_/d" .config
-          echo "CONFIG_TARGET_${DEVICE_TARGET}_${DEVICE_SUBTARGET}_DEVICE_notion_r281=y" >> .config
-          make defconfig
+          echo "DEVICE_SUBTARGET=$DEVICE_SUBTARGET" >> $GITHUB_OUTPUT
       - name: Generate Variables
         id: env
         run: |
