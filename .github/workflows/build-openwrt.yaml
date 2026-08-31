@@ -150,13 +150,11 @@ jobs:
           done
       - name: Generate Toolchain Configuration
         run: |
-          if [[ "$CONFIG_LINK" == "true" && -n "$CONFIG_URL" ]]; then
-            curl -s $CONFIG_URL -o $OPENWRT_ROOT_PATH/.config
-          else
-            cp ./config/$CONFIG_FILE $OPENWRT_ROOT_PATH/.config
-          fi
-          echo -e "\nCONFIG_ALL=y\nCONFIG_ALL_NONSHARED=y" >> $OPENWRT_ROOT_PATH/.config
           cd $OPENWRT_ROOT_PATH
+          curl -fsSL "https://downloads.openwrt.org/releases/${OPENWRT_VERSION}/targets/${DEVICE_TARGET}/${DEVICE_SUBTARGET}/config.buildinfo" -o .config
+          sed -i '/^CONFIG_TARGET_MULTI_PROFILE/d;/^CONFIG_TARGET_PER_DEVICE_ROOTFS/d;/^CONFIG_TARGET_ALL_PROFILES/d' .config
+          sed -i -E "/^CONFIG_TARGET(_DEVICE)?_${DEVICE_TARGET}_${DEVICE_SUBTARGET}_DEVICE_/d;/^CONFIG_TARGET_DEVICE_PACKAGES_${DEVICE_TARGET}_${DEVICE_SUBTARGET}_DEVICE_/d" .config
+          echo "CONFIG_TARGET_${DEVICE_TARGET}_${DEVICE_SUBTARGET}_DEVICE_notion_r281=y" >> .config
           make defconfig
       - name: Generate Variables
         id: env
@@ -497,6 +495,7 @@ jobs:
           # Official feeds for this exact release/target/subtarget -- this
           # is what makes `opkg install kmod-xxx` work after flashing,
           # since our kernel's vermagic now matches these packages exactly.
+          mkdir -p ./custom/files/etc/opkg
           echo "src/gz openwrt_core https://downloads.openwrt.org/releases/${version}/targets/${DEVICE_TARGET}/${DEVICE_SUBTARGET}/packages" > ./custom/files/etc/opkg/distfeeds.conf
           echo "src/gz openwrt_base https://downloads.openwrt.org/releases/${version}/packages/${DEVICE_PLATFORM}/base" >> ./custom/files/etc/opkg/distfeeds.conf
           echo "src/gz openwrt_kmods https://downloads.openwrt.org/releases/${version}/targets/${DEVICE_TARGET}/${DEVICE_SUBTARGET}/kmods/${kmods}" >> ./custom/files/etc/opkg/distfeeds.conf
