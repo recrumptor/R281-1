@@ -89,6 +89,7 @@ jobs:
           sed -i 's/CONFIG_SDK=y/# CONFIG_SDK is not set/' .config
           sed -i 's/CONFIG_MAKE_TOOLCHAIN=y/# CONFIG_MAKE_TOOLCHAIN is not set/' .config
           sed -i 's/CONFIG_JSON_CYCLONEDX_SBOM=y/# CONFIG_JSON_CYCLONEDX_SBOM is not set/' .config
+          sed -i 's/CONFIG_ALL_NONSHARED=y/# CONFIG_ALL_NONSHARED is not set/' .config  
 
       - name: Setup Feeds
         run: |
