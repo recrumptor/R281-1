@@ -56,18 +56,17 @@ jobs:
             libelf-dev libncurses5-dev libncursesw5-dev libssl-dev \
             python3 python3-distutils python3-setuptools rsync subversion \
             swig time xsltproc binutils bzip2 diffutils findutils flex \
-            gawk gcc grep libc-dev libz-dev make perl unzip util-linux \
+            gcc grep libc-dev libz-dev make perl unzip util-linux \
             wget zlib1g-dev
           sudo -E apt-get -qq autoremove --purge
           sudo -E apt-get -qq clean
 
       - name: Clone OpenWrt
         run: |
-          git clone --depth 1 --branch $SOURCE_TAG $SOURCE_URL openwrt
+          git clone --single-branch --branch $SOURCE_TAG $SOURCE_URL openwrt
           cd openwrt
           git checkout -b build-$OPENWRT_VERSION
 
-      
       - name: Apply R281 Patches
         run: |
           cd openwrt
@@ -85,16 +84,11 @@ jobs:
           sed -i '/^CONFIG_TARGET_MULTI_PROFILE/d;/^CONFIG_TARGET_PER_DEVICE_ROOTFS/d;/^CONFIG_TARGET_ALL_PROFILES/d' .config
           sed -i -E '/^CONFIG_TARGET(_DEVICE)?_ramips_mt7621_DEVICE_/d;/^CONFIG_TARGET_DEVICE_PACKAGES_ramips_mt7621_DEVICE_/d' .config
           echo "CONFIG_TARGET_ramips_mt7621_DEVICE_notion_r281=y" >> .config
-
-      - name: Add Userspace Packages
-        run: |
-          cd openwrt
-          # Добавляем только userspace-пакеты из вашего конфига (без kmod, без kernel)
-          grep -E '^#?\s*CONFIG_(PACKAGE|FEED|IMAGEOPT|VERSIONOPT|VERSION_|DEVEL)' \
-            $GITHUB_WORKSPACE/config/$CONFIG_FILE \
-            | grep -v -E '^#?\s*CONFIG_PACKAGE_kmod-' \
-            | grep -v -E '^#?\s*CONFIG_KERNEL_' \
-            >> .config
+          # Убираем лишнее для ускорения (IB, SDK, toolchain)
+          sed -i 's/CONFIG_IB=y/# CONFIG_IB is not set/' .config
+          sed -i 's/CONFIG_SDK=y/# CONFIG_SDK is not set/' .config
+          sed -i 's/CONFIG_MAKE_TOOLCHAIN=y/# CONFIG_MAKE_TOOLCHAIN is not set/' .config
+          sed -i 's/CONFIG_JSON_CYCLONEDX_SBOM=y/# CONFIG_JSON_CYCLONEDX_SBOM is not set/' .config
 
       - name: Setup Feeds
         run: |
@@ -106,7 +100,26 @@ jobs:
           chmod +x feeds_pkg.sh && ./feeds_pkg.sh
           ./scripts/feeds install -a
 
-      - name: Generate distfeeds.conf
+      - name: Add Userspace Packages
+        run: |
+          cd openwrt
+          # Добавляем только userspace-пакеты из вашего конфига
+          grep -E '^#?\s*CONFIG_(PACKAGE|FEED|IMAGEOPT|VERSIONOPT|VERSION_)' \
+            $GITHUB_WORKSPACE/config/$CONFIG_FILE \
+            | grep -v -E '^#?\s*CONFIG_PACKAGE_kmod-' \
+            | grep -v -E '^#?\s*CONFIG_KERNEL_' \
+            >> .config
+          # Гарантируем базовые зависимости
+          echo "CONFIG_PACKAGE_modemband=y" >> .config
+
+      - name: Run DIY
+        run: |
+          cp $GITHUB_WORKSPACE/scripts/$DIY_SH openwrt/
+          mv $GITHUB_WORKSPACE/custom openwrt/
+          cd openwrt
+          chmod +x $DIY_SH && ./$DIY_SH
+
+      - name: Generate distfeeds.conf and Defconfig
         run: |
           cd openwrt
           make defconfig
@@ -123,13 +136,6 @@ jobs:
           src/gz openwrt_routing https://downloads.openwrt.org/releases/${OPENWRT_VERSION}/packages/${DEVICE_PLATFORM}/routing
           src/gz openwrt_telephony https://downloads.openwrt.org/releases/${OPENWRT_VERSION}/packages/${DEVICE_PLATFORM}/telephony
           EOF
-
-      - name: Run DIY
-        run: |
-          cp $GITHUB_WORKSPACE/scripts/$DIY_SH openwrt/
-          mv $GITHUB_WORKSPACE/custom openwrt/
-          cd openwrt
-          chmod +x $DIY_SH && ./$DIY_SH
 
       - name: Download Sources
         run: |
