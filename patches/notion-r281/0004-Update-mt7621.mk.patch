@@ -26,7 +26,7 @@ index f6a05db8d3..9584172531 100644
 +  DEVICE_VENDOR := Notion
 +  DEVICE_MODEL := R281
 +  DEVICE_PACKAGES := kmod-mt7603 kmod-mt7615e kmod-mt7663-firmware-ap \
-+	kmod-usb3 kmod-usb-net-rndis comgt-ncm -uboot-envtools
++	kmod-usb3 kmod-usb-net-rndis kmod-usb-acm comgt-ncm -uboot-envtools
 +endef
 +TARGET_DEVICES += notion_r281
 +
