@@ -25,7 +25,13 @@ config interface 'lan'
 config interface 'wan'
 	option device 'wan'
 	option proto 'dhcp'
+	option metric '10'
+
+config interface 'wan6'
+	option device 'wan'
+	option proto 'dhcpv6'
 	option metric '20'
+
 
 config interface 'wwan'
 	option device '/dev/ttyACM0'
