@@ -1,0 +1,27 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Rec <recrumptor@gmail.com>
+Date: Fri, 10 Oct 2025 20:57:52 +0500
+Subject: [PATCH 7/7] Update mt7621_notion_r281.dts
+
+Signed-off-by: Rec <recrumptor@gmail.com>
+---
+ target/linux/ramips/dts/mt7621_notion_r281.dts | 6 ++----
+ 1 file changed, 2 insertions(+), 4 deletions(-)
+
+diff --git a/target/linux/ramips/dts/mt7621_notion_r281.dts b/target/linux/ramips/dts/mt7621_notion_r281.dts
+index 49d1b9aee3..7fd7acf2fc 100644
+--- a/target/linux/ramips/dts/mt7621_notion_r281.dts
++++ b/target/linux/ramips/dts/mt7621_notion_r281.dts
+@@ -174,10 +174,8 @@
+ 	nvmem-cell-names = "mac-address";
+ };
+ 
+-&mdio {
+-	ethphy0: ethernet-phy@0 {
+-		reg = <0>;
+-	};
++&ethphy0 {
++	/delete-property/ interrupts;
+ };
+ 
+ &switch0 {

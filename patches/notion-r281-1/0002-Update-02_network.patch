@@ -1,0 +1,22 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Rec <recrumptor@gmail.com>
+Date: Fri, 10 Oct 2025 20:33:25 +0500
+Subject: [PATCH 2/7] Update 02_network
+
+Signed-off-by: Rec <recrumptor@gmail.com>
+---
+ target/linux/ramips/mt7621/base-files/etc/board.d/02_network | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/target/linux/ramips/mt7621/base-files/etc/board.d/02_network b/target/linux/ramips/mt7621/base-files/etc/board.d/02_network
+index 9e4f139a4c..6289733736 100644
+--- a/target/linux/ramips/mt7621/base-files/etc/board.d/02_network
++++ b/target/linux/ramips/mt7621/base-files/etc/board.d/02_network
+@@ -21,6 +21,7 @@ ramips_setup_interfaces()
+ 	hiwifi,hc5962|\
+ 	mercusys,mr70x-v1|\
+ 	netgear,wax202|\
++	notion,r281|\
+ 	sim,simax1800t|\
+ 	tplink,mr600-v2-eu|\
+ 	xiaomi,mi-router-3-pro|\

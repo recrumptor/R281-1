@@ -1,0 +1,22 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Rec <recrumptor@gmail.com>
+Date: Fri, 10 Oct 2025 20:32:16 +0500
+Subject: [PATCH 1/7] Update platform.sh
+
+Signed-off-by: Rec <recrumptor@gmail.com>
+---
+ target/linux/ramips/mt7621/base-files/lib/upgrade/platform.sh | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/target/linux/ramips/mt7621/base-files/lib/upgrade/platform.sh b/target/linux/ramips/mt7621/base-files/lib/upgrade/platform.sh
+index 33f8ccd4ce..23d3c86038 100755
+--- a/target/linux/ramips/mt7621/base-files/lib/upgrade/platform.sh
++++ b/target/linux/ramips/mt7621/base-files/lib/upgrade/platform.sh
+@@ -131,6 +131,7 @@ platform_do_upgrade() {
+ 	netgear,wax214v2|\
+ 	netis,n6|\
+ 	netis,wf2881|\
++	notion,r281|\
+ 	raisecom,msg1500-x-00|\
+ 	rostelecom,rt-fe-1a|\
+ 	rostelecom,rt-sf-1|\
