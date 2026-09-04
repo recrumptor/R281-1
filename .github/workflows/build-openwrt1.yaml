@@ -178,3 +178,17 @@ jobs:
           name: openwrt-ramips-mt7621-r281-${{ matrix.version }}
           path: openwrt/bin/targets/ramips/mt7621/
           retention-days: 7
+          
+      - name: Create Release
+        if: ${{ github.event.inputs.firmware_release == 'true' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: openwrt-${{ matrix.version }}
+          name: OpenWrt ${{ matrix.version }} - R281
+          files: |
+            openwrt/bin/targets/ramips/mt7621/*squashfs-sysupgrade.bin
+            openwrt/bin/targets/ramips/mt7621/*squashfs-factory.bin
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
