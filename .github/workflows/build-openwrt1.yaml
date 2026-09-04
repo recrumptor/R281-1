@@ -1,0 +1,180 @@
+
+name: Build OpenWrt Firmware (choice)
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "OpenWrt Version (all, 24.10.8, 25.12.5)"
+        type: choice
+        options:
+          - all
+          - 24.10.8
+          - 25.12.5
+        default: "all"
+        required: true
+      config_file:
+        description: "Config Name"
+        type: choice
+        options:
+          - openwrt.config
+        default: "openwrt.config"
+      diy:
+        description: "DIY Script"
+        type: choice
+        options:
+          - diy_v1.sh
+          - diy_v2.sh
+        default: "diy_v1.sh"
+      firmware_release:
+        description: "Firmware Release"
+        type: boolean
+        default: false
+
+env:
+  SOURCE_URL: https://github.com/openwrt/openwrt
+  R281_PATCH_DIR: patches/notion-r281
+  FEEDS_SH: feeds.sh
+  FEEDS_PKG_SH: feeds_pkg.sh
+  CONFIG_FILE: ${{ github.event.inputs.config_file }}
+  DIY_SH: ${{ github.event.inputs.diy }}
+  FIRMWARE_RELEASE: ${{ github.event.inputs.firmware_release }}
+  TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  TZ: UTC
+
+jobs:
+  Build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        version: ${{ fromJSON(github.event.inputs.version == 'all' && '["24.10.8","25.12.5"]' || format('["{0}"]', github.event.inputs.version)) }}
+    env:
+      OPENWRT_VERSION: ${{ matrix.version }}
+      SOURCE_TAG: v${{ matrix.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install Packages
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo -E apt-get -qq update
+          sudo -E apt-get -qq install -y \
+            build-essential ccache ecj fastjar file g++ gawk gettext git \
+            libelf-dev libncurses5-dev libncursesw5-dev libssl-dev \
+            python3 python3-distutils python3-setuptools python3-pyelftools \
+            rsync subversion swig time xsltproc binutils bzip2 diffutils \
+            findutils flex gcc grep libc-dev libz-dev make perl unzip \
+            util-linux wget zlib1g-dev
+          sudo -E apt-get -qq autoremove --purge
+          sudo -E apt-get -qq clean
+
+      - name: Clone OpenWrt
+        run: |
+          git clone --single-branch --branch $SOURCE_TAG $SOURCE_URL openwrt
+          cd openwrt
+          git checkout -b build-$OPENWRT_VERSION
+
+      - name: Apply R281 Patches
+        run: |
+          cd openwrt
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          for p in $GITHUB_WORKSPACE/$R281_PATCH_DIR/*.patch; do
+            git am "$p" || { echo "Patch failed: $p"; exit 1; }
+          done
+
+      - name: Download Official Config
+        run: |
+          cd openwrt
+          curl -fsSL "https://downloads.openwrt.org/releases/${OPENWRT_VERSION}/targets/ramips/mt7621/config.buildinfo" -o .config
+          sed -i '/^CONFIG_TARGET_MULTI_PROFILE/d;/^CONFIG_TARGET_PER_DEVICE_ROOTFS/d;/^CONFIG_TARGET_ALL_PROFILES/d' .config
+          sed -i -E '/^CONFIG_TARGET(_DEVICE)?_ramips_mt7621_DEVICE_/d;/^CONFIG_TARGET_DEVICE_PACKAGES_ramips_mt7621_DEVICE_/d' .config
+          echo "CONFIG_TARGET_ramips_mt7621_DEVICE_notion_r281=y" >> .config
+          sed -i 's/CONFIG_IB=y/# CONFIG_IB is not set/' .config
+          sed -i 's/CONFIG_SDK=y/# CONFIG_SDK is not set/' .config
+          sed -i 's/CONFIG_MAKE_TOOLCHAIN=y/# CONFIG_MAKE_TOOLCHAIN is not set/' .config
+          sed -i 's/CONFIG_JSON_CYCLONEDX_SBOM=y/# CONFIG_JSON_CYCLONEDX_SBOM is not set/' .config
+          sed -i 's/CONFIG_ALL_NONSHARED=y/# CONFIG_ALL_NONSHARED is not set/' .config  
+
+      - name: Setup Feeds
+        run: |
+          cp $GITHUB_WORKSPACE/scripts/$FEEDS_SH openwrt/feeds.sh
+          cd openwrt
+          chmod +x feeds.sh && ./feeds.sh
+          ./scripts/feeds update -a
+          cp $GITHUB_WORKSPACE/scripts/$FEEDS_PKG_SH feeds_pkg.sh
+          chmod +x feeds_pkg.sh && ./feeds_pkg.sh
+          ./scripts/feeds install -a
+
+      - name: Add Userspace Packages
+        run: |
+          cd openwrt
+          grep -E '^#?\s*CONFIG_(PACKAGE|FEED|IMAGEOPT|VERSIONOPT|VERSION_)' \
+            $GITHUB_WORKSPACE/config/$CONFIG_FILE \
+            | grep -v -E '^#?\s*CONFIG_PACKAGE_kmod-' \
+            | grep -v -E '^#?\s*CONFIG_KERNEL_' \
+            >> .config
+          echo "CONFIG_PACKAGE_modemband=y" >> .config
+
+      - name: Run DIY
+        run: |
+          cp $GITHUB_WORKSPACE/scripts/$DIY_SH openwrt/
+          mv $GITHUB_WORKSPACE/custom openwrt/
+          cd openwrt
+          chmod +x $DIY_SH && ./$DIY_SH
+
+      - name: Generate distfeeds and Defconfig
+        run: |
+          cd openwrt
+          make defconfig
+          DEVICE_PLATFORM=$(grep 'CONFIG_TARGET_ARCH_PACKAGES' .config | awk -F '"' '{print $2}')
+          MAJOR_VER=$(echo "$OPENWRT_VERSION" | cut -d. -f1)
+
+          if [ "$MAJOR_VER" = "25" ]; then
+            KMODS_DIR=$(curl -s "https://downloads.openwrt.org/releases/${OPENWRT_VERSION}/targets/ramips/mt7621/kmods/" \
+              | grep -oP 'href="\K[0-9][^"]+' | sort | tail -n1)
+            mkdir -p files/etc/apk/repositories.d
+            cat <<EOF > files/etc/apk/repositories.d/distfeeds.list
+            https://downloads.openwrt.org/releases/${OPENWRT_VERSION}/targets/ramips/mt7621/packages/packages.adb
+            https://downloads.openwrt.org/releases/${OPENWRT_VERSION}/packages/${DEVICE_PLATFORM}/base/packages.adb
+            https://downloads.openwrt.org/releases/${OPENWRT_VERSION}/targets/ramips/mt7621/kmods/${KMODS_DIR}/packages.adb
+            https://downloads.openwrt.org/releases/${OPENWRT_VERSION}/packages/${DEVICE_PLATFORM}/luci/packages.adb
+            https://downloads.openwrt.org/releases/${OPENWRT_VERSION}/packages/${DEVICE_PLATFORM}/packages/packages.adb
+            https://downloads.openwrt.org/releases/${OPENWRT_VERSION}/packages/${DEVICE_PLATFORM}/routing/packages.adb
+            https://downloads.openwrt.org/releases/${OPENWRT_VERSION}/packages/${DEVICE_PLATFORM}/telephony/packages.adb
+            https://downloads.openwrt.org/releases/${OPENWRT_VERSION}/packages/${DEVICE_PLATFORM}/video/packages.adb
+            EOF
+          else
+            KMODS=$(curl -s "https://downloads.openwrt.org/releases/${OPENWRT_VERSION}/targets/ramips/mt7621/kmods/" \
+              | grep -oP 'href="\K[0-9][^"]+' | sort | tail -n1)
+            mkdir -p files/etc/opkg
+            cat <<EOF > files/etc/opkg/distfeeds.conf
+            src/gz openwrt_core https://downloads.openwrt.org/releases/${OPENWRT_VERSION}/targets/ramips/mt7621/packages
+            src/gz openwrt_base https://downloads.openwrt.org/releases/${OPENWRT_VERSION}/packages/${DEVICE_PLATFORM}/base
+            src/gz openwrt_kmods https://downloads.openwrt.org/releases/${OPENWRT_VERSION}/targets/ramips/mt7621/kmods/${KMODS}
+            src/gz openwrt_luci https://downloads.openwrt.org/releases/${OPENWRT_VERSION}/packages/${DEVICE_PLATFORM}/luci
+            src/gz openwrt_packages https://downloads.openwrt.org/releases/${OPENWRT_VERSION}/packages/${DEVICE_PLATFORM}/packages
+            src/gz openwrt_routing https://downloads.openwrt.org/releases/${OPENWRT_VERSION}/packages/${DEVICE_PLATFORM}/routing
+            src/gz openwrt_telephony https://downloads.openwrt.org/releases/${OPENWRT_VERSION}/packages/${DEVICE_PLATFORM}/telephony
+            EOF
+          fi
+
+      - name: Download Sources
+        run: |
+          cd openwrt
+          make download -j8 || make download -j1 V=s
+
+      - name: Compile
+        run: |
+          cd openwrt
+          make -j$(nproc) || make -j1 V=s
+
+      - name: Upload Firmware
+        uses: actions/upload-artifact@v7
+        with:
+          name: openwrt-ramips-mt7621-r281-${{ matrix.version }}
+          path: openwrt/bin/targets/ramips/mt7621/
+          retention-days: 7
