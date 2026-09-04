@@ -9,17 +9,17 @@ Signed-off-by: Rec <recrumptor@gmail.com>
  1 file changed, 4 insertions(+)
 
 diff --git a/target/linux/ramips/mt7621/base-files/etc/board.d/01_leds b/target/linux/ramips/mt7621/base-files/etc/board.d/01_leds
-index 5d92006d66..cf8dd3d79b 100644
 --- a/target/linux/ramips/mt7621/base-files/etc/board.d/01_leds
 +++ b/target/linux/ramips/mt7621/base-files/etc/board.d/01_leds
-@@ -193,6 +193,10 @@ netgear,r7450)
- netgear,wax202)
- 	ucidef_set_led_netdev "internet" "Internet" "green:net" "wan"
- 	;;
-+notion,r281)
-+	ucidef_set_led_netdev "lan" "lan" "white:lan" "br-lan" "link"
-+	ucidef_set_led_netdev "wan" "wan" "white:wan" "eth1" "link"
-+	;;
- oraybox,x3a)
- 	ucidef_set_led_netdev "wan" "wan link" "red:status" "wan"
- 	ucidef_set_led_netdev "lan" "lan link" "green:status" "br-lan"
+@@ -204,6 +204,11 @@ netgear,r7450)
+netgear,wax202)
+	ucidef_set_led_netdev "internet" "Internet" "green:net" "wan"
+	;;
+notion,r281|\
+notion,r291)
+	ucidef_set_led_netdev "lan" "lan" "white:lan" "br-lan" "link"
+	ucidef_set_led_netdev "wan" "wan" "white:wan" "eth1" "link"
+	;;
+oraybox,x3a)
+	ucidef_set_led_netdev "wan" "wan link" "red:status" "wan"
+	ucidef_set_led_netdev "lan" "lan link" "green:status" "br-lan"
