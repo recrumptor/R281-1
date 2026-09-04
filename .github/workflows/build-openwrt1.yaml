@@ -126,7 +126,7 @@ jobs:
           cd openwrt
           chmod +x $DIY_SH && ./$DIY_SH
 
-            - name: Generate distfeeds and Defconfig
+      - name: Generate distfeeds and Defconfig
         run: |
           cd openwrt
           make defconfig
