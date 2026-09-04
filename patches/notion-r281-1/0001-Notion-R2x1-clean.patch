@@ -1,0 +1,352 @@
+From 6698881a32eed73dd6d75569d1a37fe768213003 Mon Sep 17 00:00:00 2001
+From: LENAR <0x4C334E3438@users.noreply.github.com>
+Date: Wed, 22 Apr 2026 00:14:50 +0800
+Subject: [PATCH] Notion R2x1
+
+---
+ .../linux/ramips/dts/mt7621_notion_r281.dts   |  16 ++
+ .../linux/ramips/dts/mt7621_notion_r291.dts   |  16 ++
+ .../linux/ramips/dts/mt7621_notion_r2x1.dtsi  | 205 ++++++++++++++++++
+ target/linux/ramips/image/mt7621.mk           |  24 ++
+ .../mt7621/base-files/etc/board.d/01_leds     |   5 +
+ .../mt7621/base-files/etc/board.d/02_network  |   2 +
+ .../mt7621/base-files/lib/upgrade/platform.sh |   2 +
+ 7 files changed, 270 insertions(+)
+ create mode 100644 target/linux/ramips/dts/mt7621_notion_r281.dts
+ create mode 100644 target/linux/ramips/dts/mt7621_notion_r291.dts
+ create mode 100644 target/linux/ramips/dts/mt7621_notion_r2x1.dtsi
+
+diff --git a/target/linux/ramips/dts/mt7621_notion_r281.dts b/target/linux/ramips/dts/mt7621_notion_r281.dts
+new file mode 100644
+index 00000000000000..4c0f30c5ce5b3f
+--- /dev/null
++++ b/target/linux/ramips/dts/mt7621_notion_r281.dts
+@@ -0,0 +1,16 @@
++// SPDX-License-Identifier: GPL-2.0-or-later
++
++#include "mt7621_notion_r2x1.dtsi"
++
++/ {
++	compatible = "notion,r281", "mediatek,mt7621-soc";
++	model = "Notion R281";
++};
++
++&leds {
++	lan {
++		color = <LED_COLOR_ID_WHITE>;
++		function = LED_FUNCTION_LAN;
++		gpios = <&gpio 0 GPIO_ACTIVE_HIGH>;
++	};
++};
+diff --git a/target/linux/ramips/dts/mt7621_notion_r291.dts b/target/linux/ramips/dts/mt7621_notion_r291.dts
+new file mode 100644
+index 00000000000000..95340ff14bebaf
+--- /dev/null
++++ b/target/linux/ramips/dts/mt7621_notion_r291.dts
+@@ -0,0 +1,16 @@
++// SPDX-License-Identifier: GPL-2.0-or-later
++
++#include "mt7621_notion_r2x1.dtsi"
++
++/ {
++	compatible = "notion,r291", "mediatek,mt7621-soc";
++	model = "Notion R291";
++};
++
++&leds {
++	lan {
++		color = <LED_COLOR_ID_WHITE>;
++		function = LED_FUNCTION_LAN;
++		gpios = <&gpio 8 GPIO_ACTIVE_HIGH>;
++	};
++};
+diff --git a/target/linux/ramips/dts/mt7621_notion_r2x1.dtsi b/target/linux/ramips/dts/mt7621_notion_r2x1.dtsi
+new file mode 100644
+index 00000000000000..ef5efb655d45fc
+--- /dev/null
++++ b/target/linux/ramips/dts/mt7621_notion_r2x1.dtsi
+@@ -0,0 +1,205 @@
++// SPDX-License-Identifier: GPL-2.0-or-later
++
++#include "mt7621.dtsi"
++
++#include <dt-bindings/gpio/gpio.h>
++#include <dt-bindings/input/input.h>
++#include <dt-bindings/leds/common.h>
++
++/ {
++	aliases {
++		led-boot = &boot_red;
++		led-failsafe = &boot_red;
++		led-upgrade = &boot_red;
++		label-mac-device = &gmac0;
++	};
++
++	leds: leds {
++		compatible = "gpio-leds";
++
++		boot_red: boot {
++			color = <LED_COLOR_ID_RED>;
++			function = LED_FUNCTION_BOOT;
++			gpios = <&gpio 16 GPIO_ACTIVE_HIGH>;
++		};
++
++		wan {
++			color = <LED_COLOR_ID_WHITE>;
++			function = LED_FUNCTION_WAN;
++			gpios = <&gpio 15 GPIO_ACTIVE_HIGH>;
++		};
++	};
++
++	keys {
++		compatible = "gpio-keys";
++
++		wps {
++			label = "wps";
++			gpios = <&gpio 10 GPIO_ACTIVE_LOW>;
++			linux,code = <KEY_WPS_BUTTON>;
++		};
++
++		reset {
++			label = "reset";
++			gpios = <&gpio 7 GPIO_ACTIVE_LOW>;
++			linux,code = <KEY_RESTART>;
++		};
++	};
++
++	gpio-export {
++		compatible = "gpio-export";
++		#size-cells = <0>;
++
++		reset_cp {
++			gpio-export,name = "reset_cp";
++			gpio-export,output = <0>;
++			gpios = <&gpio 5 GPIO_ACTIVE_HIGH>;
++		};
++	};
++};
++
++&nand {
++	status = "okay";
++
++	partitions {
++		compatible = "fixed-partitions";
++		#address-cells = <1>;
++		#size-cells = <1>;
++
++		partition@0 {
++			label = "u-boot";
++			reg = <0x0 0x80000>;
++			read-only;
++		};
++
++		partition@80000 {
++			label = "u-boot-env";
++			reg = <0x80000 0x80000>;
++		};
++
++		partition@100000 {
++			label = "factory";
++			reg = <0x100000 0x40000>;
++			read-only;
++
++			nvmem-layout {
++				compatible = "fixed-layout";
++				#address-cells = <1>;
++				#size-cells = <1>;
++
++				eeprom_factory_0: eeprom@0 {
++					reg = <0x0 0x400>;
++				};
++
++				eeprom_factory_8000: eeprom@8000 {
++					reg = <0x8000 0x4da8>;
++				};
++
++				macaddr_factory_4: macaddr@4 {
++					reg = <0x4 0x6>;
++				};
++
++				macaddr_factory_8004: macaddr@8004 {
++					reg = <0x8004 0x6>;
++				};
++			};
++		};
++
++		partition@140000 {
++			label = "firmware";
++			reg = <0x140000 0x7dc0000>;
++
++			compatible = "fixed-partitions";
++			#address-cells = <1>;
++			#size-cells = <1>;
++
++			partition@0 {
++				label = "kernel";
++				reg = <0x0 0x400000>;
++			};
++
++			partition@400000 {
++				label = "ubi";
++				reg = <0x400000 0x79c0000>;
++			};
++		};
++
++		partition@7f00000 {
++			label = "stock-env";
++			reg = <0x7f00000 0x80000>;
++			read-only;
++		};
++	};
++};
++
++&pcie {
++	status = "okay";
++};
++
++&pcie0 {
++	wifi@0,0 {
++		compatible = "mediatek,mt76";
++		reg = <0x0000 0 0 0 0>;
++		ieee80211-freq-limit = <2400000 2500000>;
++
++		nvmem-cells = <&eeprom_factory_0>;
++		nvmem-cell-names = "eeprom";
++	};
++};
++
++&pcie1 {
++	wifi@0,0 {
++		compatible = "mediatek,mt76";
++		reg = <0x0000 0 0 0 0>;
++		ieee80211-freq-limit = <5000000 6000000>;
++
++		nvmem-cells = <&eeprom_factory_8000>;
++		nvmem-cell-names = "eeprom";
++	};
++};
++
++&gmac0 {
++	nvmem-cells = <&macaddr_factory_4>;
++	nvmem-cell-names = "mac-address";
++};
++
++&gmac1 {
++	status = "okay";
++	label = "wan";
++	phy-handle = <&ethphy0>;
++
++	nvmem-cells = <&macaddr_factory_8004>;
++	nvmem-cell-names = "mac-address";
++};
++
++&ethphy0 {
++	/delete-property/ interrupts;
++};
++
++&switch0 {
++	ports {
++		port@1 {
++			status = "okay";
++			label = "lan1";
++		};
++
++		port@2 {
++			status = "okay";
++			label = "lan2";
++		};
++
++		/* port@3 is not used */
++
++		port@4 {
++			status = "okay";
++			label = "lan3";
++		};
++	};
++};
++
++&state_default {
++	gpio {
++		groups = "jtag", "uart3";
++		function = "gpio";
++	};
++};
+diff --git a/target/linux/ramips/image/mt7621.mk b/target/linux/ramips/image/mt7621.mk
+index 50c53a6d8e1b01..8e3a4085624f29 100644
+--- a/target/linux/ramips/image/mt7621.mk
++++ b/target/linux/ramips/image/mt7621.mk
+@@ -2594,6 +2594,30 @@ define Device/netis_wf2881
+ endef
+ TARGET_DEVICES += netis_wf2881
+
++define Device/notion_r2x1
++  $(Device/nand)
++  $(Device/uimage-lzma-loader)
++  IMAGE_SIZE := 128768k
++  IMAGES += factory.bin
++  IMAGE/factory.bin := append-kernel | pad-to $$$$(KERNEL_SIZE) | append-ubi | \
++	check-size
++  DEVICE_VENDOR := Notion
++  DEVICE_PACKAGES := kmod-mt7603 kmod-mt7615e kmod-mt7663-firmware-ap \
++	kmod-usb3 kmod-usb-net-rndis comgt-ncm -uboot-envtools
++endef
++
++define Device/notion_r281
++  $(Device/notion_r2x1)
++  DEVICE_MODEL := R281
++endef
++TARGET_DEVICES += notion_r281
++
++define Device/notion_r291
++  $(Device/notion_r2x1)
++  DEVICE_MODEL := R291
++endef
++TARGET_DEVICES += notion_r291
++
+ define Device/openfi_5pro
+   $(Device/dsa-migration)
+   IMAGE_SIZE := 65216k
+diff --git a/target/linux/ramips/mt7621/base-files/etc/board.d/01_leds b/target/linux/ramips/mt7621/base-files/etc/board.d/01_leds
+index dbefbccc179546..550046da3f13bc 100644
+--- a/target/linux/ramips/mt7621/base-files/etc/board.d/01_leds
++++ b/target/linux/ramips/mt7621/base-files/etc/board.d/01_leds
+@@ -204,6 +204,11 @@ netgear,r7450)
+ netgear,wax202)
+ 	ucidef_set_led_netdev "internet" "Internet" "green:net" "wan"
+ 	;;
++notion,r281|\
++notion,r291)
++	ucidef_set_led_netdev "lan" "lan" "white:lan" "br-lan" "link"
++	ucidef_set_led_netdev "wan" "wan" "white:wan" "eth1" "link"
++	;;
+ oraybox,x3a)
+ 	ucidef_set_led_netdev "wan" "wan link" "red:status" "wan"
+ 	ucidef_set_led_netdev "lan" "lan link" "green:status" "br-lan"
+diff --git a/target/linux/ramips/mt7621/base-files/etc/board.d/02_network b/target/linux/ramips/mt7621/base-files/etc/board.d/02_network
+index 18e979df614f89..46d840081efd7c 100644
+--- a/target/linux/ramips/mt7621/base-files/etc/board.d/02_network
++++ b/target/linux/ramips/mt7621/base-files/etc/board.d/02_network
+@@ -23,6 +23,8 @@ ramips_setup_interfaces()
+ 	hiwifi,hc5962|\
+ 	mercusys,mr70x-v1|\
+ 	netgear,wax202|\
++	notion,r281|\
++	notion,r291|\
+ 	sim,simax1800t|\
+ 	sim,simax1800u|\
+ 	tplink,mr600-v2-eu|\
+diff --git a/target/linux/ramips/mt7621/base-files/lib/upgrade/platform.sh b/target/linux/ramips/mt7621/base-files/lib/upgrade/platform.sh
+index 981cfacd541d19..de19ce11eb5c84 100644
+--- a/target/linux/ramips/mt7621/base-files/lib/upgrade/platform.sh
++++ b/target/linux/ramips/mt7621/base-files/lib/upgrade/platform.sh
+@@ -138,6 +138,8 @@ platform_do_upgrade() {
+ 	netgear,wax214v2|\
+ 	netis,n6|\
+ 	netis,wf2881|\
++	notion,r281|\
++	notion,r291|\
+ 	raisecom,msg1500-x-00|\
+ 	rostelecom,rt-fe-1a|\
+ 	rostelecom,rt-sf-1|\
+-- 
+2.49.0
