@@ -288,7 +288,7 @@ index 50c53a6d8e1b01..8e3a4085624f29 100644
 +	check-size
 +  DEVICE_VENDOR := Notion
 +  DEVICE_PACKAGES := kmod-mt7603 kmod-mt7615e kmod-mt7663-firmware-ap \
-+	kmod-usb3 kmod-usb-net-rndis comgt-ncm -uboot-envtools
++	kmod-usb3 kmod-usb-net-rndis kmod-usb-acm comgt-ncm -uboot-envtools
 +endef
 +
 +define Device/notion_r281
