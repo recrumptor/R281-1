@@ -82,7 +82,17 @@ jobs:
           cd openwrt
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
-          for p in $GITHUB_WORKSPACE/$R281_PATCH_DIR/*.patch; do
+          
+          MAJOR_VER=$(echo "$OPENWRT_VERSION" | cut -d. -f1)
+          if [ "$MAJOR_VER" = "25" ]; then
+            PATCH_DIR="$GITHUB_WORKSPACE/patches/notion-r281-1"
+          else
+            PATCH_DIR="$GITHUB_WORKSPACE/patches/notion-r281"
+          fi
+          
+          echo "Using patches from: $PATCH_DIR"
+          for p in $PATCH_DIR/*.patch; do
+            [ -e "$p" ] || { echo "No patches found in $PATCH_DIR"; exit 1; }
             git am "$p" || { echo "Patch failed: $p"; exit 1; }
           done
 
