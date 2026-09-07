@@ -108,7 +108,7 @@ jobs:
           sed -i 's/CONFIG_MAKE_TOOLCHAIN=y/# CONFIG_MAKE_TOOLCHAIN is not set/' .config
           sed -i 's/CONFIG_JSON_CYCLONEDX_SBOM=y/# CONFIG_JSON_CYCLONEDX_SBOM is not set/' .config
           sed -i 's/CONFIG_ALL_NONSHARED=y/# CONFIG_ALL_NONSHARED is not set/' .config
-          sed -i 's/CONFIG_ALL_KMODS=y/# CONFIG_ALL_KMODS is not set/' .config
+          # sed -i 's/CONFIG_ALL_KMODS=y/# CONFIG_ALL_KMODS is not set/' .config
           sed -i 's/CONFIG_COLLECT_KERNEL_DEBUG=y/# CONFIG_COLLECT_KERNEL_DEBUG is not set/' .config
           sed -i 's/CONFIG_SDK_LLVM_BPF=y/# CONFIG_SDK_LLVM_BPF is not set/' .config
 
