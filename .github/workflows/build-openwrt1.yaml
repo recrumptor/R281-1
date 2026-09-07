@@ -188,10 +188,11 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: openwrt-ramips-mt7621-r281-${{ matrix.version }}
-          path: |
-            openwrt/bin/targets/ramips/mt7621/*squashfs-factory.bin
-            openwrt/bin/targets/ramips/mt7621/*squashfs-sysupgrade.bin
-            openwrt/bin/targets/ramips/mt7621/*initramfs-kernel.bin
+          path: openwrt/bin/targets/ramips/mt7621/
+          # path: |
+            # openwrt/bin/targets/ramips/mt7621/*squashfs-factory.bin
+            # openwrt/bin/targets/ramips/mt7621/*squashfs-sysupgrade.bin
+            # openwrt/bin/targets/ramips/mt7621/*initramfs-kernel.bin
           retention-days: 7
           
       - name: Create Release
