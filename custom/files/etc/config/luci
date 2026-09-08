@@ -54,3 +54,8 @@ config command
 	option name 'Modem Command'
 	option command 'atexe'
 	option param '1'
+
+config command
+	option name 'USB Protocol'
+	option command 'atusb'
+	option param '1'
