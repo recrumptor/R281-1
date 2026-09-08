@@ -13,6 +13,7 @@ do
   # [ "$SSID" != "OpenWrt" ] && continue
   uci set wireless."$RADIO".disabled="0"
   uci set wireless."$RADIO".cell_density="0"
+  uci set wireless.default_"$RADIO".disabled="0"
   if [ "$BAND" = "2g" ];then
     uci set wireless.default_"$RADIO".ssid="Notion-${MD5}"
     uci set wireless.default_"$RADIO".ifname="wifi-2g"
