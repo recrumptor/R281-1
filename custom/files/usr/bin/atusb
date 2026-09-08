@@ -1,0 +1,98 @@
+#!/bin/sh
+# Copyright (c) 2023 LENAR
+
+usb_init="/etc/init.d/usb_init"
+usb_path="/sys/class/android_usb/android0"
+script_name="$(basename "$0")"
+
+show_usage() {
+    cat << EOF
+Usage: $script_name <USB Protocol>
+
+USB protocol
+  rndis                - Set to rndis protocol
+  ncm                  - Set to ncm protocol
+  ncm_mbim             - Set to ncm_mbim protocol
+  mbim                 - Set to mbim protocol
+  ecm                  - Set to ecm protocol
+  config               - Show current configuration
+
+Examples
+  $script_name ncm
+  $script_name c
+EOF
+}
+
+header() {
+    echo -e "--[      USB Protocol     ]--\n"
+}
+
+normalize() {
+    echo "$1" | tr 'A-Z' 'a-z'
+}
+
+error_exit() {
+    echo "Error: $1" >&2
+    exit 1
+}
+
+get_current_functions() {
+    at_exec "awk '/\/functions/ {print \$2}' $usb_init" | grep "marvell" | xargs
+}
+
+get_running_functions() {
+    at_exec "cat $usb_path/functions" | grep "marvell" | xargs
+}
+
+restart_cp() {
+    if at_exec "reboot" &> /dev/null; then
+        echo "Restarting module..."
+    else
+        error_exit "Failed to restart module."
+    fi
+}
+
+set_mode() {
+    old_functions=$(get_current_functions | awk -F, '{print $1}')
+    base_functions=$(get_current_functions | sed 's/^[^,]*,//')
+    new_functions=$(normalize "$1")
+    [ -z "$old_functions" ] && error_exit "Failed to get current functions."
+    if [ "$old_functions" = "$new_functions" ]; then
+        error_exit "Already in $new_functions protocol."
+    fi
+    if at_exec "sed -i '/functions/s/$old_functions/$new_functions/' $usb_init" &> /dev/null; then
+        header
+        echo "Functions updated successfully:"
+        echo "  Old: $old_functions,$base_functions"
+        echo "  New: $new_functions,$base_functions"
+        echo ""
+        restart_cp
+    else
+        error_exit "Failed to update usb_init file."
+    fi
+}
+
+show_config() {
+    functions_list=$(at_exec "ls $usb_path" | sed -n 's/.*f_//p' | xargs)
+    [ -z "$functions_list" ] && error_exit "Failed to get functions."
+    header
+    echo "Init file: $usb_init"
+    echo "Init functions: $(get_current_functions)"
+    echo "Currently running: $(get_running_functions)"
+    echo ""
+    echo "Supported functions: $functions_list"
+}
+
+main() {
+    if [ $# -eq 0 ]; then
+        error_exit "No command specified. Use '$script_name config' to see current USB protocol."
+    fi
+    case "$(normalize "$1")" in
+        h|help) show_usage ;;
+        rndis|ncm|ncm_mbim|mbim|ecm) set_mode "$1" ;;
+        c|config) show_config ;;
+        *) error_exit "Invalid command '$1'. Use '$script_name help' for more details." ;;
+    esac
+}
+
+main "$@"
