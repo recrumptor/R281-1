@@ -60,7 +60,8 @@ jobs:
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
-          sudo rm -f /etc/apt/sources.list.d/google-chrome.list
+          sudo rm -f /etc/apt/sources.list.d/google* /etc/apt/sources.list.d/chrome*
+          sudo sed -i '/google/d' /etc/apt/sources.list /etc/apt/sources.list.d/*.list 2>/dev/null || true
           sudo rm -rf /var/lib/apt/lists/*
           sudo -E apt-get -qq update
           sudo -E apt-get -qq install -y \
