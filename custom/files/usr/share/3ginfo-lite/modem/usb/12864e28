@@ -1,5 +1,4 @@
-# Notion R2x1
-# Copyright (c) 2023 LENAR
+# Notion R281
 
 O=$(sms_tool -d $DEVICE at "at+zrssi;+zcellinfo?;+zcainfo?")
 
@@ -77,19 +76,22 @@ FWA=$(sms_tool -d $DEVICE at "AT*READVER")
 FW=$(echo "$FWA" | awk -F[:] '/^release_version/ {print $2}' | xargs)
 
 # Modem
-MODELA=$(sms_tool -d $DEVICE at "AT+CGMI" | sed -n '/CGMI/s/.*"\([^"]*\)".*/\1/p')
-MODELB=$(sms_tool -d $DEVICE at "AT+CGMM" | sed -n '/CGMM/s/.*"\([^"]*\)".*/\1/p')
-MODEL="$MODELA $MODELB"
+MODELA=$(sms_tool -d $DEVICE at "AT+CGMI" | tr -s "\n"  | xargs)
+MODELACUT=$(echo $MODELA | tr -d " \t\n\r" | cut -d ":" -f2 | xargs)
+MODELB=$(sms_tool -d $DEVICE at "AT+CGMM")
+MODELBCUT=$(echo $MODELB | tr -d " \t\n\r" | cut -d ":" -f2 | xargs)
+
+MODEL="$MODELACUT "$MODELBCUT
 
 if [ -z "$TEMP" ]; then
 	TEMP='-'
 fi
 
 # International Mobile Equipment Identity (IMEI)
-OI=$(sms_tool -d $DEVICE at "AT+GSN")
+OI=$(sms_tool -d $DEVICE at "AT+GSN" | xargs)
 NR_I=$(echo "$OI" | sed 's/AT+GSN//g' | xargs)
 if [ -z "NR_I" ]; then
-	OIB=$(sms_tool -d $DEVICE at "AT*MRD_IMEI?")
+	OIB=$(sms_tool -d $DEVICE at "AT*MRD_IMEI?" | xargs)
 	NR_I=$(echo "$OIB" | awk -F[:] '/^\*MRD_IMEI/ {print $2}' | xargs)
 	NR_IMEI="$NR_I"
 else
@@ -97,7 +99,7 @@ else
 fi
 
 # International Mobile Subscriber Identity (IMSI)
-OS=$(sms_tool -d $DEVICE at "AT+CIMI")
+OS=$(sms_tool -d $DEVICE at "AT+CIMI" | xargs)
 NR_C=$(echo "$OS" | sed 's/AT+CIMI//g' | xargs)
 if [ -n "$NR_C" ]; then
 	NR_IMSI="$NR_C"
@@ -111,24 +113,19 @@ if [ -n "$NR_D" ]; then
 fi
 
 # Protocol
-# Driver=rndis_host & Driver=cdc_ncm & Driver=cdc_ether & Driver=cdc_mbim & Driver=cdc_acm
-PV=$(sed -n '/Vendor=1286 ProdID=4e28/,/^$/{s/.*Driver=\([^ ]*\).*/\1/p}' /sys/kernel/debug/usb/devices | sed -n '1p')
-if [ -n "$PV" ]; then
-	case $PV in
-		*"rndis_host"*)
-			PROTO="rndis"
-		;;
-		*"cdc_ncm"*)
+# DRIVER=QMI_WWAN & DRIVER=CDC_MBIM & DRIVER=CDC_ETHER
+PV=$(cat /sys/kernel/debug/usb/devices 2> /dev/null)
+PVCUT=$(echo $PV | awk -F 'Vendor=1286 ProdID=4e28' '{print $2}' | cut -c-1085)
+if [ -n "$PVCUT" ]; then
+	case $PVCUT in
+		*"Driver=cdc_acm"*)
 			PROTO="ncm"
 		;;
-		*"cdc_ether"*)
-			PROTO="ecm"
-		;;
-		*"cdc_mbim"*)
+		*"Driver=cdc_mbim"*)
 			PROTO="mbim"
 		;;
-		*"cdc_acm"*)
-			PROTO="acm"
+		*"Driver=cdc_ether"*)
+			PROTO="ecm"
 		;;
 	esac
 fi
