@@ -111,19 +111,24 @@ if [ -n "$NR_D" ]; then
 fi
 
 # Protocol
-# DRIVER=QMI_WWAN & DRIVER=CDC_MBIM & DRIVER=CDC_ETHER
-PV=$(cat /sys/kernel/debug/usb/devices 2> /dev/null)
-PVCUT=$(echo $PV | awk -F 'Vendor=1286 ProdID=4e28' '{print $2}' | cut -c-1085)
-if [ -n "$PVCUT" ]; then
-	case $PVCUT in
-		*"Driver=cdc_acm"*)
+# Driver=rndis_host & Driver=cdc_ncm & Driver=cdc_ether & Driver=cdc_mbim & Driver=cdc_acm
+PV=$(sed -n '/Vendor=1286 ProdID=4e28/,/^$/{s/.*Driver=\([^ ]*\).*/\1/p}' /sys/kernel/debug/usb/devices | sed -n '1p')
+if [ -n "$PV" ]; then
+	case $PV in
+		*"rndis_host"*)
+			PROTO="rndis"
+		;;
+		*"cdc_ncm"*)
 			PROTO="ncm"
 		;;
-		*"Driver=cdc_mbim"*)
+		*"cdc_ether"*)
+			PROTO="ecm"
+		;;
+		*"cdc_mbim"*)
 			PROTO="mbim"
 		;;
-		*"Driver=cdc_ether"*)
-			PROTO="ecm"
+		*"cdc_acm"*)
+			PROTO="acm"
 		;;
 	esac
 fi
