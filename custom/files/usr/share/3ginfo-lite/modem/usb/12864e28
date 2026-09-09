@@ -1,4 +1,5 @@
-# Notion R281
+# Notion R2x1
+# Copyright (c) 2023 LENAR
 
 O=$(sms_tool -d $DEVICE at "at+zrssi;+zcellinfo?;+zcainfo?")
 
@@ -76,22 +77,19 @@ FWA=$(sms_tool -d $DEVICE at "AT*READVER")
 FW=$(echo "$FWA" | awk -F[:] '/^release_version/ {print $2}' | xargs)
 
 # Modem
-MODELA=$(sms_tool -d $DEVICE at "AT+CGMI" | tr -s "\n"  | xargs)
-MODELACUT=$(echo $MODELA | tr -d " \t\n\r" | cut -d ":" -f2 | xargs)
-MODELB=$(sms_tool -d $DEVICE at "AT+CGMM")
-MODELBCUT=$(echo $MODELB | tr -d " \t\n\r" | cut -d ":" -f2 | xargs)
-
-MODEL="$MODELACUT "$MODELBCUT
+MODELA=$(sms_tool -d $DEVICE at "AT+CGMI" | sed -n '/CGMI/s/.*"\([^"]*\)".*/\1/p')
+MODELB=$(sms_tool -d $DEVICE at "AT+CGMM" | sed -n '/CGMM/s/.*"\([^"]*\)".*/\1/p')
+MODEL="$MODELA $MODELB"
 
 if [ -z "$TEMP" ]; then
 	TEMP='-'
 fi
 
 # International Mobile Equipment Identity (IMEI)
-OI=$(sms_tool -d $DEVICE at "AT+GSN" | xargs)
+OI=$(sms_tool -d $DEVICE at "AT+GSN")
 NR_I=$(echo "$OI" | sed 's/AT+GSN//g' | xargs)
 if [ -z "NR_I" ]; then
-	OIB=$(sms_tool -d $DEVICE at "AT*MRD_IMEI?" | xargs)
+	OIB=$(sms_tool -d $DEVICE at "AT*MRD_IMEI?")
 	NR_I=$(echo "$OIB" | awk -F[:] '/^\*MRD_IMEI/ {print $2}' | xargs)
 	NR_IMEI="$NR_I"
 else
@@ -99,7 +97,7 @@ else
 fi
 
 # International Mobile Subscriber Identity (IMSI)
-OS=$(sms_tool -d $DEVICE at "AT+CIMI" | xargs)
+OS=$(sms_tool -d $DEVICE at "AT+CIMI")
 NR_C=$(echo "$OS" | sed 's/AT+CIMI//g' | xargs)
 if [ -n "$NR_C" ]; then
 	NR_IMSI="$NR_C"
