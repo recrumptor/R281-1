@@ -7,16 +7,13 @@ cat >> ./feeds.conf.default <<EOF
 # src-git small https://github.com/kenzok8/small
 
 # Extra Packages
-src-git 3ginfo_lite https://github.com/4IceG/luci-app-3ginfo-lite
+# src-git 3ginfo_lite https://github.com/4IceG/luci-app-3ginfo-lite
 # src-git lite_watchdog https://github.com/4IceG/luci-app-lite-watchdog
-src-git modemband https://github.com/4IceG/luci-app-modemband
-src-git obsy_modemband https://github.com/obsy/modemband
+# src-git modemband https://github.com/4IceG/luci-app-modemband
+# src-git obsy_modemband https://github.com/obsy/modemband
 # src-git modemdefine https://github.com/4IceG/luci-app-modemdefine
-src-git sms_tool https://github.com/4IceG/luci-app-sms-tool-js
-# src-git xray https://github.com/yichya/luci-app-xray
-# src-git v2raya https://github.com/v2rayA/v2raya-openwrt
-# src-git zapret https://github.com/remittor/zapret-openwrt
-# src-git amneziawg https://github.com/Slava-Shchipunov/awg-openwrt
+# src-git sms_tool https://github.com/4IceG/luci-app-sms-tool-js
+src-git 5gmodem https://github.com/fildunsky/luci-app-5gmodem
 EOF
 
 exit 0
