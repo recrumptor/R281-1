@@ -1,7 +1,8 @@
 #!/bin/sh
+# Copyright (c) 2026 recrumptor
 # Управление антенным RF-переключателем C300-1 / Notion R281 (MT7621)
 # Физ. GPIO9/11 (bank0) = base(512) + 9/11 = 521/523 (output)
-# Детект-пины GPIO12/14 на этой плате не разведены/не работают - не используются.
+# Детект-пины GPIO12/14  не используются.
 
 GPIO_A=521   # физ. GPIO9  - control bit A
 GPIO_B=523   # физ. GPIO11 - control bit B
