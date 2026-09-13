@@ -8,5 +8,5 @@ STOP=10
 start() {
     MODE=$(cat /etc/antenna_mode 2>/dev/null)
     [ -n "$MODE" ] || MODE=internal
-    /usr/bin/antenna-switch.sh "$MODE"
+    /usr/bin/antenna-switch "$MODE"
 }
