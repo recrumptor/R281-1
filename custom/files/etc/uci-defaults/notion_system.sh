@@ -5,7 +5,7 @@
 
 uci -q batch <<-EOF >/dev/null
   # Set system properties
-  set system.@system[0].hostname="R281"
+  set system.@system[0].hostname="C300-1"
   set system.@system[0].conloglevel="8"
   set system.@system[0].cronloglevel="9"
 
