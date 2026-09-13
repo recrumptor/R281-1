@@ -115,6 +115,10 @@ jobs:
           sed -i 's/CONFIG_COLLECT_KERNEL_DEBUG=y/# CONFIG_COLLECT_KERNEL_DEBUG is not set/' .config
           sed -i 's/CONFIG_SDK_LLVM_BPF=y/# CONFIG_SDK_LLVM_BPF is not set/' .config
 
+      - name: Add Proton2025
+        run: |
+           cd openwrt
+           git clone --depth 1 https://github.com/ChesterGoodiny/luci-theme-proton2025 package/luci-theme-proton2025
       - name: Setup Feeds
         run: |
           cp $GITHUB_WORKSPACE/scripts/$FEEDS_SH openwrt/feeds.sh
@@ -133,7 +137,6 @@ jobs:
             | grep -v -E '^#?\s*CONFIG_PACKAGE_kmod-' \
             | grep -v -E '^#?\s*CONFIG_KERNEL_' \
             >> .config
-          echo "CONFIG_PACKAGE_modemband=y" >> .config
 
       - name: Run DIY
         run: |
