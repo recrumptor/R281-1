@@ -14,6 +14,7 @@ cat >> ./feeds.conf.default <<EOF
 # src-git modemdefine https://github.com/4IceG/luci-app-modemdefine
 # src-git sms_tool https://github.com/4IceG/luci-app-sms-tool-js
 src-git 5gmodem https://github.com/fildunsky/luci-app-5gmodem
+src-git proton https://github.com/ChesterGoodiny/luci-theme-proton2025
 EOF
 
 exit 0
