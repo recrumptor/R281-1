@@ -1,0 +1,9 @@
+#!/bin/sh
+# Выполняется один раз при первой загрузке после прошивки.
+
+# На случай, если git/сборка потеряли бит исполняемости - выставляем сами.
+chmod +x /usr/bin/antenna-switch
+chmod +x /etc/init.d/antenna
+
+/etc/init.d/antenna enable
+exit 0
