@@ -53,4 +53,9 @@ config command
 	option command 'atexe'
 	option param '1'
 
+config command
+	option name 'Antenna mode'
+	option command 'antenna-switch'
+	option param '1'
+
 
