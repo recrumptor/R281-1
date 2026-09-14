@@ -52,10 +52,3 @@ config command
 	option name 'Modem Command'
 	option command 'atexe'
 	option param '1'
-
-config command
-	option name 'Antenna Mode'
-	option command 'antenna-switch'
-	option param '1'
-
-
