@@ -132,12 +132,11 @@ jobs:
       - name: Add Userspace Packages
         run: |
           cd openwrt
-          grep -E '^#?\s*CONFIG_(PACKAGE|FEED|IMAGEOPT|VERSIONOPT|VERSION_)' \
+          grep -E '^#?\s*CONFIG_(PACKAGE|FEED|IMAGEOPT|VERSIONOPT|VERSION_|LUCI_LANG)' \
             $GITHUB_WORKSPACE/config/$CONFIG_FILE \
             | grep -v -E '^#?\s*CONFIG_PACKAGE_kmod-' \
             | grep -v -E '^#?\s*CONFIG_KERNEL_' \
             >> .config
-          echo "CONFIG_LUCI_LANG_ru=y" >> .config
 
       - name: Run DIY
         run: |
