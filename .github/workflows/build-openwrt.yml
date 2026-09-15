@@ -137,6 +137,7 @@ jobs:
             | grep -v -E '^#?\s*CONFIG_PACKAGE_kmod-' \
             | grep -v -E '^#?\s*CONFIG_KERNEL_' \
             >> .config
+          echo "CONFIG_LUCI_LANG_ru=y" >> .config
 
       - name: Run DIY
         run: |
