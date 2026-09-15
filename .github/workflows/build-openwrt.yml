@@ -149,6 +149,8 @@ jobs:
         run: |
           cd openwrt
           make defconfig
+          echo "=== Checking Russian language packages ==="
+          grep -i 'LUCI_LANG\|luci-i18n' .config || echo "NOTHING FOUND — regex or config issue"
           DEVICE_PLATFORM=$(grep 'CONFIG_TARGET_ARCH_PACKAGES' .config | awk -F '"' '{print $2}')
           MAJOR_VER=$(echo "$OPENWRT_VERSION" | cut -d. -f1)
 
