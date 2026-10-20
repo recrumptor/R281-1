@@ -4,7 +4,7 @@
 
 Поддерживаемые версии:
 - **24.10.8** — с `3ginfo-lite` (старый интерфейс LTE)
-- **25.12.5** — с `luci-app-5gmodem-lite`
+- **25.12.X** — с `luci-app-5gmodem-lite`
 
 > Сборка основана на [Build-R2x1](https://github.com/0x4C334E3438/Build-R2x1) для устройства от LENAR.
 > Логика сборки приведена в соответствие с официальным vermagic ядра OpenWrt.
