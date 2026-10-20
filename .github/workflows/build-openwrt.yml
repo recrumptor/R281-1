@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "OpenWrt Version (all, 24.10.8, 25.12.5)"
+        description: "OpenWrt Version (all, 24.10.8, 25.12.6)"
         type: choice
         options:
           - all
