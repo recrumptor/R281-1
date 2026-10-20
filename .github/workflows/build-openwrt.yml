@@ -10,7 +10,7 @@ on:
         options:
           - all
           - 24.10.8
-          - 25.12.5
+          - 25.12.6
         default: "all"
         required: true
       config_file:
