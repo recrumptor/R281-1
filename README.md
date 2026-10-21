@@ -177,7 +177,7 @@ fw_setenv bootargs "console=ttyS1,57600n8 root=/dev/mtdblock5"
 
 ### 7. Прошивка sysupgrade-образа
 
-Через веб-интерфейс (`192.168.1.1`, логин `root`, пароль `notion`) прошейте `openwrt-ramips-mt7621-notion_r281-squashfs-sysupgrade.bin`.
+Для обновления OpenWRT через веб-интерфейс (`192.168.1.1`, логин `root`, пароль `notion`) прошейте `openwrt-ramips-mt7621-notion_r281-squashfs-sysupgrade.bin`.
 
 Wi-Fi SSID и пароль генерируются скриптом:
 - `Notion-0dra31-5G` / `Notion-0dra31`
